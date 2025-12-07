@@ -8,7 +8,16 @@ import numpy as np
 
 from environment import EnvironmentGraph
 from agent import Agent, DecisionState
-from config import COLLISION_DISTANCE, GROUP_SIZE, EDGE_BASE_CAPACITY
+from config import (
+    COLLISION_DISTANCE,
+    GROUP_SIZE,
+    EDGE_BASE_CAPACITY,
+    DYNAMIC_BLOCKS_ENABLED,
+    BLOCK_NODE_EVERY_N_STEPS,
+    BLOCK_NODE_PROB,
+    DYNAMIC_EXITS_ENABLED,
+    EXIT_TOGGLE_EVERY_N_STEPS,
+)
 
 
 Node = Tuple[int, int]
@@ -78,12 +87,60 @@ class CrowdSimulation:
             )
             agent_index += 1
 
+    # ---------- dynamic events (Step 4) ----------
+
+    def _apply_dynamic_events(self, node_occupancy: Dict[Node, int]):
+        """
+        Introduce dynamic obstacles and exit changes during the simulation.
+        - Randomly blocks some unoccupied nodes.
+        - Randomly opens/closes exits.
+        """
+        import random
+
+        # Dynamic blocking / unblocking of nodes
+        if DYNAMIC_BLOCKS_ENABLED and self.time_step % BLOCK_NODE_EVERY_N_STEPS == 0:
+            candidates = [
+                n
+                for n, data in self.env.graph.nodes(data=True)
+                if self.env.is_accessible(n)
+                and node_occupancy.get(n, 0) == 0
+            ]
+            if candidates and random.random() < BLOCK_NODE_PROB:
+                node = random.choice(candidates)
+                self.env.block_node(node)
+
+        # Dynamic exit opening/closing
+        if DYNAMIC_EXITS_ENABLED and self.time_step % EXIT_TOGGLE_EVERY_N_STEPS == 0:
+            exits = [n for n in self.env.graph.nodes() if self.env.is_exit(n)]
+            border_candidates = [
+                n
+                for n, data in self.env.graph.nodes(data=True)
+                if self.env.is_accessible(n)
+                and not self.env.is_exit(n)
+                and (
+                    n[0] == 0
+                    or n[1] == 0
+                    or n[0] == (self.env.width - 1)
+                    or n[1] == (self.env.height - 1)
+                )
+            ]
+
+            import random
+
+            if exits and random.random() < 0.5:
+                node = random.choice(exits)
+                self.env.unmark_exit(node)
+            elif border_candidates:
+                node = random.choice(border_candidates)
+                self.env.mark_exit(node)
+
     # ---------- core step ----------
 
     def step(self):
         """
         Single sim tick:
         - compute node occupancy
+        - apply dynamic events (blocked nodes / exit changes)
         - approximate edge congestion and update edge weights
         - compute group leader positions
         - build DecisionState and query each agent for desired move
@@ -98,7 +155,10 @@ class CrowdSimulation:
             node_occupancy[agent.current_node] += 1
         self.last_node_occupancy = node_occupancy
 
-        # 2) edge occupancy approximation from node occupancy, then update weights
+        # 2) apply dynamic environment events (blocked paths, exits)
+        self._apply_dynamic_events(node_occupancy)
+
+        # 3) edge occupancy approximation from node occupancy, then update weights
         edge_occupancy: Dict[EdgeKey, int] = {}
         edge_over_capacity: Dict[EdgeKey, bool] = {}
 
@@ -111,13 +171,13 @@ class CrowdSimulation:
 
         self.env.update_all_edge_weights_from_occupancy(edge_occupancy)
 
-        # 3) group leader positions
+        # 4) group leader positions
         group_targets: Dict[int, Node] = {}
         for agent in self.agents:
             if agent.is_leader and agent.group_id is not None:
                 group_targets[agent.group_id] = agent.current_node
 
-        # 4) NEW: agent positions / types + global density
+        # 5) agent positions / types + global density
         agent_positions: Dict[int, Node] = {a.id: a.current_node for a in self.agents}
         agent_types: Dict[int, str] = {a.id: a.agent_type for a in self.agents}
 
@@ -125,7 +185,7 @@ class CrowdSimulation:
         occupied_nodes = len(node_occupancy)
         global_density = total_agents / max(1, occupied_nodes)
 
-        # 5) build state snapshot for this tick
+        # 6) build state snapshot for this tick
         state = DecisionState(
             time_step=self.time_step,
             node_occupancy=node_occupancy,
@@ -136,13 +196,13 @@ class CrowdSimulation:
             global_density=global_density,
         )
 
-        # 6) each agent chooses desired next node
+        # 7) each agent chooses desired next node
         desires: Dict[int, Node] = {}
         for agent in self.agents:
             desired = agent.desired_next_node(state)
             desires[agent.id] = desired
 
-        # 7) conflict resolution
+        # 8) conflict resolution
         node_to_agents = defaultdict(list)
         for agent_id, node in desires.items():
             node_to_agents[node].append(agent_id)
@@ -160,7 +220,7 @@ class CrowdSimulation:
                     if loser != winner:
                         allowed_moves[loser] = None
 
-        # 8) apply movements
+        # 9) apply movements
         for agent in self.agents:
             target = allowed_moves.get(agent.id, None)
             if target is None:
@@ -168,7 +228,7 @@ class CrowdSimulation:
             agent.move_to(target)
             self.node_visit_counts[agent.current_node] += 1
 
-        # 9) collisions
+        # 10) collisions
         self._update_collisions()
 
     # ---------- metrics & helpers ----------

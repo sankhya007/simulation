@@ -134,6 +134,16 @@ class EnvironmentGraph:
         self.graph.nodes[node]["accessibility"] = "exit"
         self.graph.nodes[node]["type"] = "exit"
 
+    def unmark_exit(self, node: Node):
+        """
+        Convert an exit back into a normal corridor.
+        """
+        if node not in self.graph:
+            return
+        if self.is_exit(node):
+            self.graph.nodes[node]["accessibility"] = "open"
+            self.graph.nodes[node]["type"] = "corridor"
+
     # ------------------------------------------------------------------
     # PATHFINDING
     # ------------------------------------------------------------------
@@ -152,8 +162,8 @@ class EnvironmentGraph:
     ) -> List[Node]:
         """
         Generic weighted shortest path helper.
-        - weight_attr="weight"      -> uses congestion-aware weights
-        - weight_attr="distance"   -> ignores congestion, uses geometric distance
+        - weight_attr="weight"    -> uses congestion-aware weights
+        - weight_attr="distance"  -> ignores congestion, uses geometric distance
         """
         try:
             path = nx.astar_path(
