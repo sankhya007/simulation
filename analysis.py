@@ -179,3 +179,44 @@ def show_evacuation_report(evac_metrics: dict):
     else:
         for (node, count) in bottlenecks:
             print(f"  {node}: {count} visits")
+
+
+
+def plot_metrics_by_strategy(sim: CrowdSimulation):
+    """
+    Compare average steps, waits, and replans for each navigation strategy.
+
+    Great for showing:
+      - shortest-path vs congestion-aware vs safe
+      - which one is more efficient / safer
+    """
+    summary = sim.get_metrics_summary()
+    by_strategy = summary.get("by_strategy", {})
+
+    if not by_strategy:
+        return
+
+    strategies = sorted(by_strategy.keys())
+    avg_steps = [by_strategy[s]["avg_steps"] for s in strategies]
+    avg_waits = [by_strategy[s]["avg_waits"] for s in strategies]
+    avg_replans = [by_strategy[s]["avg_replans"] for s in strategies]
+
+    x = np.arange(len(strategies))
+    width = 0.25
+
+    plt.figure(figsize=(7, 4))
+    plt.bar(x - width, avg_steps, width=width, label="Steps")
+    plt.bar(x,         avg_waits, width=width, label="Waits")
+    plt.bar(x + width, avg_replans, width=width, label="Replans")
+
+    plt.xticks(x, strategies)
+    plt.xlabel("Navigation strategy")
+    plt.ylabel("Average count")
+    plt.title("Per-strategy Behaviour Comparison")
+    plt.legend()
+    plt.tight_layout()
+
+    # Optional: save for report
+    # plt.savefig("metrics_by_strategy.png", dpi=200)
+
+    plt.show()

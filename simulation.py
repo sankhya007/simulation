@@ -1,6 +1,7 @@
 # simulation.py
 
 import math
+import random
 from collections import defaultdict
 from typing import List, Tuple, Dict
 
@@ -17,6 +18,8 @@ from config import (
     BLOCK_NODE_PROB,
     DYNAMIC_EXITS_ENABLED,
     EXIT_TOGGLE_EVERY_N_STEPS,
+    NAV_STRATEGY_MODE,
+    NAV_STRATEGY_MIX,
 )
 
 
@@ -29,16 +32,13 @@ class CrowdSimulation:
     
     def get_metrics_summary(self) -> Dict[str, dict]:
         """
-        Compute global and per-agent-type metrics for analysis and plotting.
+        Compute global, per-agent-type, and per-strategy metrics.
 
         Returns a dict like:
         {
             "global": {...},
-            "by_type": {
-                "leader": {...},
-                "follower": {...},
-                ...
-            }
+            "by_type": {...},
+            "by_strategy": {...},
         }
         """
         num_agents = len(self.agents)
@@ -59,9 +59,6 @@ class CrowdSimulation:
                 ratios.append(a.steps_taken / a.initial_shortest_path_len)
         ratios = np.array(ratios) if ratios else np.array([])
 
-        # max density peak across time
-        max_density_peak = max(self.max_density_per_step) if self.max_density_per_step else 0
-
         global_metrics = {
             "num_agents": num_agents,
             "time_steps": self.time_step,
@@ -74,17 +71,15 @@ class CrowdSimulation:
             "avg_exit_time": float(exit_times.mean()) if len(exit_times) > 0 else None,
             "avg_steps_over_optimal": float(ratios.mean()) if len(ratios) > 0 else None,
             "max_density_over_time": self.max_density_per_step,
-            "max_density_peak": float(max_density_peak),
         }
 
         # group by agent_type
-        by_type: Dict[str, dict] = {}
         from collections import defaultdict
-
         agents_by_type = defaultdict(list)
         for a in self.agents:
             agents_by_type[a.agent_type].append(a)
 
+        by_type: Dict[str, dict] = {}
         for t, group in agents_by_type.items():
             n = len(group)
             steps_t = np.array([a.steps_taken for a in group])
@@ -109,10 +104,42 @@ class CrowdSimulation:
                 "avg_steps_over_optimal": float(ratios_t.mean()) if len(ratios_t) > 0 else None,
             }
 
+        # group by navigation strategy
+        agents_by_strategy = defaultdict(list)
+        for a in self.agents:
+            agents_by_strategy[a.strategy].append(a)
+
+        by_strategy: Dict[str, dict] = {}
+        for s, group in agents_by_strategy.items():
+            n = len(group)
+            steps_s = np.array([a.steps_taken for a in group])
+            waits_s = np.array([a.wait_steps for a in group])
+            replans_s = np.array([a.replans for a in group])
+            colls_s = np.array([a.collisions for a in group])
+            exits_s = np.array([1 if a.exit_reached else 0 for a in group])
+
+            ratios_s = []
+            for a in group:
+                if a.initial_shortest_path_len > 0:
+                    ratios_s.append(a.steps_taken / a.initial_shortest_path_len)
+            ratios_s = np.array(ratios_s) if ratios_s else np.array([])
+
+            by_strategy[s] = {
+                "count": n,
+                "avg_steps": float(steps_s.mean()) if n > 0 else 0.0,
+                "avg_waits": float(waits_s.mean()) if n > 0 else 0.0,
+                "avg_replans": float(replans_s.mean()) if n > 0 else 0.0,
+                "avg_collisions": float(colls_s.mean()) if n > 0 else 0.0,
+                "exit_rate": float(exits_s.mean()) if n > 0 else 0.0,
+                "avg_steps_over_optimal": float(ratios_s.mean()) if len(ratios_s) > 0 else None,
+            }
+
         return {
             "global": global_metrics,
             "by_type": by_type,
+            "by_strategy": by_strategy,
         }
+
 
 
 
@@ -138,6 +165,26 @@ class CrowdSimulation:
     # ---------- initialization helpers ----------
 
     def _init_agents_with_groups(self, num_agents: int):
+        # --- decide navigation strategies for each agent ---
+        if NAV_STRATEGY_MODE == "mixed":
+            frac_short = NAV_STRATEGY_MIX.get("shortest", 0.0)
+            frac_cong = NAV_STRATEGY_MIX.get("congestion", 0.0)
+            frac_safe = NAV_STRATEGY_MIX.get("safe", 0.0)
+
+            n_short = int(num_agents * frac_short)
+            n_cong = int(num_agents * frac_cong)
+            n_safe = num_agents - n_short - n_cong
+
+            strategies = (
+                ["shortest"] * n_short
+                + ["congestion"] * n_cong
+                + ["safe"] * n_safe
+            )
+            random.shuffle(strategies)
+        else:
+            # uniform population of a single strategy
+            strategies = [NAV_STRATEGY_MODE] * num_agents
+
         full_groups = num_agents // GROUP_SIZE
         agent_index = 0
         group_id = 1
@@ -150,6 +197,7 @@ class CrowdSimulation:
                     env=self.env,
                     agent_type="leader",
                     group_id=group_id,
+                    navigation_strategy=strategies[agent_index],
                 )
             )
             agent_index += 1
@@ -161,6 +209,7 @@ class CrowdSimulation:
                         env=self.env,
                         agent_type="follower",
                         group_id=group_id,
+                        navigation_strategy=strategies[agent_index],
                     )
                 )
                 agent_index += 1
@@ -174,9 +223,11 @@ class CrowdSimulation:
                     env=self.env,
                     agent_type="normal",
                     group_id=None,
+                    navigation_strategy=strategies[agent_index],
                 )
             )
             agent_index += 1
+
 
     # ---------- dynamic events ----------
 

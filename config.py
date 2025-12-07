@@ -46,3 +46,22 @@ EVACUATION_MODE = False
 
 # Default scenario name (used if no CLI arg)
 DEFAULT_SCENARIO_NAME = "normal"
+# === Navigation strategy comparison (AI) ===
+# Strategies:
+#   - "shortest": ignore congestion (pure geometric distance)
+#   - "congestion": use dynamic weights (current behaviour)
+#   - "safe": avoid dense regions aggressively
+#
+# NAV_STRATEGY_MODE controls how agents are assigned:
+#   - "shortest"    -> all agents shortest-path
+#   - "congestion"  -> all agents congestion-aware
+#   - "safe"        -> all agents safe
+#   - "mixed"       -> use NAV_STRATEGY_MIX fractions
+NAV_STRATEGY_MODE = "mixed"  # "shortest", "congestion", "safe", "mixed"
+
+# Fractions used only when NAV_STRATEGY_MODE == "mixed"
+NAV_STRATEGY_MIX = {
+    "shortest": 0.34,
+    "congestion": 0.33,
+    "safe": 0.33,
+}

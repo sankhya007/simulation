@@ -24,6 +24,7 @@ from analysis import (
     plot_metrics_by_agent_type,
     compute_evacuation_metrics,
     show_evacuation_report,
+    plot_metrics_by_strategy,
 )
 from scenarios import configure_environment_for_active_scenario
 
@@ -269,6 +270,11 @@ def run_visual_simulation():
 
     # After simulation, print summary & show metrics
     sim.summary()
+    show_density_heatmap(sim)
+    plot_travel_time_histogram(sim)
+    plot_max_density_over_time(sim)
+    plot_metrics_by_agent_type(sim)
+    plot_metrics_by_strategy(sim)
 
     # Evacuation-specific KPIs + bottlenecks
     evac_metrics = None

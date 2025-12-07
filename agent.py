@@ -56,16 +56,13 @@ class Agent:
         - group_id: int or None
         - speed: probability of moving in a given tick (0..1)
         - perception_radius: how far it "sees" group / congestion
+        - navigation_strategy: "shortest" | "congestion" | "safe"
         - policy: optional external decision policy (AgentPolicy)
 
     Metrics:
-        - steps_taken: total moves performed
-        - wait_steps: number of ticks the agent chose to wait
-        - replans: number of path recomputations
-        - goals_reached: how many goals it completed
-        - exit_reached: whether it ever reached an exit node
-        - exit_time_step: time step at which it reached exit (if any)
-        - initial_shortest_path_len: ideal distance (no congestion) to first goal
+        - steps_taken, wait_steps, replans, goals_reached
+        - exit_reached, exit_time_step
+        - initial_shortest_path_len
     """
 
     _id_counter = 0
@@ -78,6 +75,7 @@ class Agent:
         speed: Optional[float] = None,
         perception_radius: float = PERCEPTION_RADIUS,
         policy: Optional[AgentPolicy] = None,
+        navigation_strategy: str = "congestion",
     ):
         self.env = env
         self.id = Agent._id_counter
@@ -86,6 +84,9 @@ class Agent:
         self.agent_type = agent_type
         self.group_id = group_id
         self.is_leader = (agent_type == "leader")
+
+        # navigation strategy (AI behaviour)
+        self.strategy = navigation_strategy  # "shortest", "congestion", "safe"
 
         if speed is None:
             self.speed = AGENT_TYPE_SPEEDS.get(agent_type, 0.8)
@@ -121,7 +122,7 @@ class Agent:
                 self.goal_node = self.current_node
                 self.path = [self.current_node]
         else:
-            # Normal mode: random personal goal
+            # Normal mode: random goal
             self.goal_node: Node = env.get_random_node()
             while self.goal_node == self.current_node:
                 self.goal_node = env.get_random_node()
@@ -155,7 +156,15 @@ class Agent:
     # ---------- internal helpers ----------
 
     def _weight_attr_for_routing(self) -> str:
-        return "distance" if self.agent_type == "panic" else "weight"
+        """
+        Decide which edge attribute to use when planning:
+        - "shortest"  -> pure geometric distance (ignores congestion)
+        - "congestion"/"safe" -> dynamic congestion-aware 'weight'
+        """
+        if self.strategy == "shortest":
+            return "distance"
+        else:
+            return "weight"
 
     def _compute_path(self, start: Node, goal: Node):
         self.replans += 1
@@ -165,7 +174,6 @@ class Agent:
     def _ensure_path_valid(self):
         """
         If remaining path contains blocked nodes, recompute.
-        Called before using the current path when obstacles may have changed.
         """
         if self.path_index >= len(self.path) - 1:
             return
@@ -184,7 +192,6 @@ class Agent:
         In evacuation mode: reaching the exit is terminal -> no new goal.
         """
         if EVACUATION_MODE:
-            # We consider evacuation complete for this agent.
             self.finished = True
             return
 
@@ -240,9 +247,10 @@ class Agent:
                         self.path_index = 0
 
         # --- global density-based replanning (crowded scenario) ---
-        if global_density > GLOBAL_DENSITY_REPLAN_THRESHOLD and random.random() < 0.2:
-            self.path = self._compute_path(self.current_node, target_node)
-            self.path_index = 0
+        if self.strategy in ("congestion", "safe"):
+            if global_density > GLOBAL_DENSITY_REPLAN_THRESHOLD and random.random() < 0.2:
+                self.path = self._compute_path(self.current_node, target_node)
+                self.path_index = 0
 
         # --- speed: slow agents sometimes wait ---
         if random.random() > self.speed:
@@ -260,19 +268,24 @@ class Agent:
         candidate_next = self.path[self.path_index + 1]
 
         # --- avoid edges that are over capacity ---
-        edge_key = (self.current_node, candidate_next)
-        if edge_over_capacity.get(edge_key, False):
-            self.path = self._compute_path(self.current_node, target_node)
-            self.path_index = 0
-            if len(self.path) > 1:
-                candidate_next = self.path[1]
+        if self.strategy in ("congestion", "safe"):
+            edge_key = (self.current_node, candidate_next)
+            if edge_over_capacity.get(edge_key, False):
+                self.path = self._compute_path(self.current_node, target_node)
+                self.path_index = 0
+                if len(self.path) > 1:
+                    candidate_next = self.path[1]
 
-        # --- simple congestion avoidance at node level ---
+        # --- congestion avoidance at node level ---
         candidate_density = node_occupancy.get(candidate_next, 0)
 
         threshold = DENSITY_THRESHOLD
         if self.agent_type == "panic":
             threshold += 2
+
+        # "safe" agents are more sensitive to crowding → lower threshold
+        if self.strategy == "safe":
+            threshold = max(0, threshold - 1)
 
         if candidate_density <= threshold:
             return candidate_next
