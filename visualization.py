@@ -10,13 +10,22 @@ from matplotlib.lines import Line2D
 
 from environment import EnvironmentGraph
 from simulation import CrowdSimulation
-from config import GRID_WIDTH, GRID_HEIGHT, NUM_AGENTS, MAX_STEPS, SEED
+from config import (
+    GRID_WIDTH,
+    GRID_HEIGHT,
+    NUM_AGENTS,
+    MAX_STEPS,
+    SEED,
+    EVACUATION_MODE,
+)
 from analysis import (
     plot_travel_time_histogram,
     plot_max_density_over_time,
     plot_metrics_by_agent_type,
+    compute_evacuation_metrics,
+    show_evacuation_report,
 )
-from scenarios import configure_environment_for_active_scenario, get_active_scenario
+from scenarios import configure_environment_for_active_scenario
 
 
 def run_visual_simulation():
@@ -24,17 +33,18 @@ def run_visual_simulation():
 
     # --- create environment & simulation ---
     env = EnvironmentGraph(GRID_WIDTH, GRID_HEIGHT)
-    
+
     # Apply scenario-specific environment configuration (exits, etc.)
     configure_environment_for_active_scenario(env)
-    
+
     sim = CrowdSimulation(env, NUM_AGENTS)
 
     pos = {n: env.get_pos(n) for n in env.graph.nodes()}
 
     # --- figure & axes setup ---
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.set_title("Graph-based Crowd Simulation with Dynamic Obstacles & Exits")
+    title_suffix = " (Evacuation)" if EVACUATION_MODE else ""
+    ax.set_title(f"Graph-based Crowd Simulation{title_suffix}")
     ax.set_xlim(-1, env.width)
     ax.set_ylim(-1, env.height)
     ax.set_aspect("equal")
@@ -127,7 +137,7 @@ def run_visual_simulation():
         zorder=4,
     )
 
-    # --- info text ---
+    # --- info text HUD ---
     info_text = ax.text(
         0.02,
         0.98,
@@ -227,12 +237,19 @@ def run_visual_simulation():
         exit_scat.set_offsets(exit_xy)
         blocked_scat.set_offsets(blocked_xy)
 
-        info_text.set_text(
+        # live info text
+        base_text = (
             f"Step: {sim.time_step}\n"
             f"Agents: {len(sim.agents)}\n"
             f"Total collisions: {sim.total_collisions}\n"
             f"Occupied nodes: {len(sim.last_node_occupancy)}"
         )
+
+        if EVACUATION_MODE:
+            evacuated = sum(1 for a in sim.agents if a.exit_reached)
+            base_text += f"\nEvacuated: {evacuated}/{len(sim.agents)}"
+
+        info_text.set_text(base_text)
 
         return agent_scat, density_img, exit_scat, blocked_scat, info_text
 
@@ -252,14 +269,24 @@ def run_visual_simulation():
 
     # After simulation, print summary & show metrics
     sim.summary()
-    show_density_heatmap(sim)
+
+    # Evacuation-specific KPIs + bottlenecks
+    evac_metrics = None
+    if EVACUATION_MODE:
+        evac_metrics = compute_evacuation_metrics(sim)
+        show_evacuation_report(evac_metrics)
+
+    show_density_heatmap(sim, evac_metrics)
     plot_travel_time_histogram(sim)
     plot_max_density_over_time(sim)
     plot_metrics_by_agent_type(sim)
 
 
-
-def show_density_heatmap(sim: CrowdSimulation):
+def show_density_heatmap(sim: CrowdSimulation, evac_metrics: dict | None = None):
+    """
+    Show cumulative visit heatmap, and (optionally) highlight bottleneck nodes
+    with star markers and visit counts.
+    """
     density = sim.get_density_matrix()
 
     plt.figure(figsize=(6, 4))
@@ -268,6 +295,40 @@ def show_density_heatmap(sim: CrowdSimulation):
     plt.title("Crowd Density Heatmap (Cumulative Visits)")
     plt.xlabel("X")
     plt.ylabel("Y")
+
+    # Optional bottleneck overlay
+    if evac_metrics is not None and evac_metrics.get("bottlenecks"):
+        bottlenecks = evac_metrics["bottlenecks"]
+        xs = [node[0] for node, _ in bottlenecks]
+        ys = [node[1] for node, _ in bottlenecks]
+
+        # Star markers around top-K bottleneck nodes
+        plt.scatter(
+            xs,
+            ys,
+            marker="*",
+            s=150,
+            edgecolors="black",
+            facecolors="none",
+            linewidths=1.5,
+            label="Bottleneck nodes",
+        )
+
+        # Annotate with visit counts
+        for (node, count) in bottlenecks:
+            x, y = node
+            plt.text(
+                x,
+                y + 0.2,
+                str(count),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="black",
+            )
+
+        plt.legend(loc="upper right", framealpha=0.9, fontsize=8)
+
     plt.tight_layout()
 
     # Optional: save figure for report
