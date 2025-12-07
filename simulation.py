@@ -59,6 +59,9 @@ class CrowdSimulation:
                 ratios.append(a.steps_taken / a.initial_shortest_path_len)
         ratios = np.array(ratios) if ratios else np.array([])
 
+        # max density peak across time
+        max_density_peak = max(self.max_density_per_step) if self.max_density_per_step else 0
+
         global_metrics = {
             "num_agents": num_agents,
             "time_steps": self.time_step,
@@ -71,6 +74,7 @@ class CrowdSimulation:
             "avg_exit_time": float(exit_times.mean()) if len(exit_times) > 0 else None,
             "avg_steps_over_optimal": float(ratios.mean()) if len(ratios) > 0 else None,
             "max_density_over_time": self.max_density_per_step,
+            "max_density_peak": float(max_density_peak),
         }
 
         # group by agent_type
@@ -109,6 +113,7 @@ class CrowdSimulation:
             "global": global_metrics,
             "by_type": by_type,
         }
+
 
 
 
