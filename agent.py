@@ -212,11 +212,21 @@ class Agent:
         return self._rule_based_desired_next_node(state)
 
     def _rule_based_desired_next_node(self, state: DecisionState) -> Node:
+        """
+        Rule-based behaviour with time-aware movement:
+
+        - Group following / leader tracking
+        - Global-density-based replanning
+        - Edge-capacity-aware rerouting
+        - Node-level congestion avoidance & sidesteps
+        - NEW: effective speed depends on edge congestion (time model)
+        """
         node_occupancy = state.node_occupancy
         group_targets = state.group_targets
         edge_over_capacity = state.edge_over_capacity
         global_density = state.global_density
 
+        # Ensure our path is still valid given possible new blocks
         self._ensure_path_valid()
 
         # End of path?
@@ -247,15 +257,9 @@ class Agent:
                         self.path_index = 0
 
         # --- global density-based replanning (crowded scenario) ---
-        if self.strategy in ("congestion", "safe"):
-            if global_density > GLOBAL_DENSITY_REPLAN_THRESHOLD and random.random() < 0.2:
-                self.path = self._compute_path(self.current_node, target_node)
-                self.path_index = 0
-
-        # --- speed: slow agents sometimes wait ---
-        if random.random() > self.speed:
-            self.wait_steps += 1
-            return self.current_node
+        if global_density > GLOBAL_DENSITY_REPLAN_THRESHOLD and random.random() < 0.2:
+            self.path = self._compute_path(self.current_node, target_node)
+            self.path_index = 0
 
         # --- ensure path is current after any replanning ---
         if self.path_index >= len(self.path) - 1:
@@ -268,24 +272,35 @@ class Agent:
         candidate_next = self.path[self.path_index + 1]
 
         # --- avoid edges that are over capacity ---
-        if self.strategy in ("congestion", "safe"):
-            edge_key = (self.current_node, candidate_next)
-            if edge_over_capacity.get(edge_key, False):
-                self.path = self._compute_path(self.current_node, target_node)
-                self.path_index = 0
-                if len(self.path) > 1:
-                    candidate_next = self.path[1]
+        edge_key = (self.current_node, candidate_next)
+        if edge_over_capacity.get(edge_key, False):
+            self.path = self._compute_path(self.current_node, target_node)
+            self.path_index = 0
+            if len(self.path) > 1:
+                candidate_next = self.path[1]
 
-        # --- congestion avoidance at node level ---
+        # --- TIME MODEL: adjust move probability based on edge slowdown ---
+        # If staying in place (no move), just use base speed
+        if candidate_next == self.current_node:
+            effective_speed = self.speed
+        else:
+            slowdown = self.env.get_edge_slowdown(self.current_node, candidate_next)
+            # bigger slowdown -> smaller effective speed
+            effective_speed = self.speed / slowdown
+
+        # clamp to [0.05, 1.0] so agents never fully freeze
+        effective_speed = max(0.05, min(effective_speed, 1.0))
+
+        if random.random() > effective_speed:
+            self.wait_steps += 1
+            return self.current_node
+
+        # --- simple congestion avoidance at node level ---
         candidate_density = node_occupancy.get(candidate_next, 0)
 
         threshold = DENSITY_THRESHOLD
         if self.agent_type == "panic":
             threshold += 2
-
-        # "safe" agents are more sensitive to crowding → lower threshold
-        if self.strategy == "safe":
-            threshold = max(0, threshold - 1)
 
         if candidate_density <= threshold:
             return candidate_next
@@ -329,6 +344,7 @@ class Agent:
             return self.current_node
 
         return best_node
+
 
     # ---------- movement & position ----------
 

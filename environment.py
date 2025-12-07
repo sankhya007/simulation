@@ -30,6 +30,29 @@ class EnvironmentGraph:
             - dynamic_weight: congestion-adjusted cost
     """
 
+    def get_edge_slowdown(self, u: Node, v: Node) -> float:
+        """
+        Returns a slowdown factor >= 1.0 based on how 'heavy' this edge is.
+
+        slowdown = weight / distance
+
+        - If there is no congestion: weight ~= distance -> slowdown ≈ 1.
+        - If congestion increases weight, slowdown > 1 -> agent moves less often.
+        """
+        if not self.graph.has_edge(u, v):
+            return 1.0
+
+        data = self.graph[u][v]
+        dist = data.get("distance", 1.0)
+        weight = data.get("weight", dist)
+
+        if dist <= 0:
+            return 1.0
+
+        slowdown = weight / dist
+        return max(1.0, slowdown)
+
+
     def __init__(
         self,
         width: int,
