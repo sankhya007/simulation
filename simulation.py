@@ -2,13 +2,16 @@
 
 import math
 from collections import defaultdict
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import numpy as np
 
 from environment import EnvironmentGraph
 from agent import Agent
-from config import COLLISION_DISTANCE
+from config import COLLISION_DISTANCE, GROUP_SIZE
+
+
+Node = Tuple[int, int]
 
 
 class CrowdSimulation:
@@ -16,41 +19,122 @@ class CrowdSimulation:
 
     def __init__(self, env: EnvironmentGraph, num_agents: int):
         self.env = env
-        self.agents: List[Agent] = [Agent(env) for _ in range(num_agents)]
+        self.agents: List[Agent] = []
+
+        # Assign agents into groups (leaders + followers + normals)
+        self._init_agents_with_groups(num_agents)
+
         self.time_step = 0
 
+        # Metrics
         self.node_visit_counts = defaultdict(int)
         self.total_collisions = 0
+        self.last_node_occupancy: Dict[Node, int] = defaultdict(int)
 
         for agent in self.agents:
             self.node_visit_counts[agent.current_node] += 1
 
+    # ---------- initialization helpers ----------
+
+    def _init_agents_with_groups(self, num_agents: int):
+        full_groups = num_agents // GROUP_SIZE
+        agent_index = 0
+        group_id = 1
+
+        # Full groups
+        for _ in range(full_groups):
+            # leader
+            self.agents.append(
+                Agent(
+                    env=self.env,
+                    agent_type="leader",
+                    group_id=group_id,
+                )
+            )
+            agent_index += 1
+
+            # followers
+            for _ in range(GROUP_SIZE - 1):
+                self.agents.append(
+                    Agent(
+                        env=self.env,
+                        agent_type="follower",
+                        group_id=group_id,
+                    )
+                )
+                agent_index += 1
+
+            group_id += 1
+
+        # Leftover agents as normals
+        while agent_index < num_agents:
+            self.agents.append(
+                Agent(
+                    env=self.env,
+                    agent_type="normal",
+                    group_id=None,
+                )
+            )
+            agent_index += 1
+
+    # ---------- core step ----------
+
     def step(self):
-        """Single sim tick: desire → conflict resolution → move → collisions."""
+        """
+        Single sim tick:
+        - compute node occupancy
+        - update edge weights based on congestion
+        - compute group leader positions
+        - agents choose desired next node
+        - resolve conflicts & move
+        - measure collisions
+        """
         self.time_step += 1
 
-        # 1) each agent chooses desired next node
-        desires = {agent.id: agent.desired_next_node() for agent in self.agents}
+        # 1) node occupancy at current time
+        node_occupancy: Dict[Node, int] = defaultdict(int)
+        for agent in self.agents:
+            node_occupancy[agent.current_node] += 1
+        self.last_node_occupancy = node_occupancy
 
-        # 2) conflict resolution
+        # 2) edge occupancy approximation from node occupancy, then update weights
+        edge_occupancy: Dict[Tuple[Node, Node], int] = {}
+        for u, v in self.env.graph.edges():
+            occ = node_occupancy.get(u, 0) + node_occupancy.get(v, 0)
+            edge_occupancy[(u, v)] = occ
+        self.env.update_all_edge_weights_from_occupancy(edge_occupancy)
+
+        # 3) group leader positions
+        group_targets: Dict[int, Node] = {}
+        for agent in self.agents:
+            if agent.is_leader and agent.group_id is not None:
+                group_targets[agent.group_id] = agent.current_node
+
+        # 4) each agent chooses desired next node
+        desires: Dict[int, Node] = {}
+        for agent in self.agents:
+            desired = agent.desired_next_node(node_occupancy, group_targets)
+            desires[agent.id] = desired
+
+        # 5) conflict resolution
         node_to_agents = defaultdict(list)
-        for aid, node in desires.items():
-            node_to_agents[node].append(aid)
+        for agent_id, node in desires.items():
+            node_to_agents[node].append(agent_id)
 
-        allowed_moves = {}
-        for node, aids in node_to_agents.items():
-            if len(aids) == 1:
-                allowed_moves[aids[0]] = node
+        allowed_moves: Dict[int, Node | None] = {}
+        for node, agent_ids in node_to_agents.items():
+            if len(agent_ids) == 1:
+                allowed_moves[agent_ids[0]] = node
             else:
                 import random
 
-                winner = random.choice(aids)
+                winner = random.choice(agent_ids)
                 allowed_moves[winner] = node
-                for loser in aids:
+                for loser in agent_ids:
                     if loser != winner:
                         allowed_moves[loser] = None
 
-        # 3) apply movements
+        # 6) apply movements
         for agent in self.agents:
             target = allowed_moves.get(agent.id, None)
             if target is None:
@@ -58,8 +142,10 @@ class CrowdSimulation:
             agent.move_to(target)
             self.node_visit_counts[agent.current_node] += 1
 
-        # 4) collisions
+        # 7) collisions
         self._update_collisions()
+
+    # ---------- metrics & helpers ----------
 
     def _update_collisions(self):
         positions = [agent.get_position() for agent in self.agents]
