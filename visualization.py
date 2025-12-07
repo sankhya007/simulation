@@ -16,6 +16,7 @@ from analysis import (
     plot_max_density_over_time,
     plot_metrics_by_agent_type,
 )
+from scenarios import configure_environment_for_active_scenario, get_active_scenario
 
 
 def run_visual_simulation():
@@ -23,6 +24,10 @@ def run_visual_simulation():
 
     # --- create environment & simulation ---
     env = EnvironmentGraph(GRID_WIDTH, GRID_HEIGHT)
+    
+    # Apply scenario-specific environment configuration (exits, etc.)
+    configure_environment_for_active_scenario(env)
+    
     sim = CrowdSimulation(env, NUM_AGENTS)
 
     pos = {n: env.get_pos(n) for n in env.graph.nodes()}

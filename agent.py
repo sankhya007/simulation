@@ -12,6 +12,7 @@ from config import (
     AGENT_TYPE_SPEEDS,
     DENSITY_THRESHOLD,
     GLOBAL_DENSITY_REPLAN_THRESHOLD,
+    EVACUATION_MODE,
 )
 
 
@@ -57,7 +58,7 @@ class Agent:
         - perception_radius: how far it "sees" group / congestion
         - policy: optional external decision policy (AgentPolicy)
 
-    Metrics (Step 6):
+    Metrics:
         - steps_taken: total moves performed
         - wait_steps: number of ticks the agent chose to wait
         - replans: number of path recomputations
@@ -102,25 +103,37 @@ class Agent:
         self.exit_reached: bool = False
         self.exit_time_step: Optional[int] = None
 
-        # For path optimality evaluation
         self.initial_start: Optional[Node] = None
         self.initial_goal: Optional[Node] = None
         self.initial_shortest_path_len: int = 0
 
         # --- position / path ---
         self.current_node: Node = env.get_random_node()
-        self.goal_node: Node = env.get_random_node()
-        while self.goal_node == self.current_node:
-            self.goal_node = env.get_random_node()
 
-        # store initial start/goal
+        # initial goal & path
+        if EVACUATION_MODE:
+            # Evacuation: go to nearest exit
+            exit_path = env.shortest_path_to_nearest_exit(self.current_node)
+            if exit_path:
+                self.goal_node = exit_path[-1]
+                self.path = exit_path
+            else:
+                self.goal_node = self.current_node
+                self.path = [self.current_node]
+        else:
+            # Normal mode: random personal goal
+            self.goal_node: Node = env.get_random_node()
+            while self.goal_node == self.current_node:
+                self.goal_node = env.get_random_node()
+            self.path = self._compute_path(self.current_node, self.goal_node)
+
+        self.path_index = 0
+
+        # store initial start/goal for path optimality analysis
         self.initial_start = self.current_node
         self.initial_goal = self.goal_node
 
-        self.path = self._compute_path(self.current_node, self.goal_node)
-        self.path_index = 0
-
-        # compute ideal (no-congestion) path length for initial goal
+        # ideal shortest path length ignoring congestion
         ideal_path = env.shortest_path_weighted(
             self.initial_start,
             self.initial_goal,
@@ -128,7 +141,7 @@ class Agent:
         )
         self.initial_shortest_path_len = max(0, len(ideal_path) - 1)
 
-        # we don't count the initial path as a "replan"
+        # initial planning is not counted as "replan"
         self.replans = 0
 
         self.finished = False
@@ -159,7 +172,6 @@ class Agent:
         remaining = self.path[self.path_index + 1 :]
         for n in remaining:
             if not self.env.is_accessible(n):
-                # path goes through a blocked node -> recompute
                 self.path = self._compute_path(self.current_node, self.goal_node)
                 self.path_index = 0
                 return
@@ -167,7 +179,15 @@ class Agent:
     # ---------- goal / path management ----------
 
     def choose_new_goal(self):
-        # We assume this is called when a goal is reached (see decision logic)
+        """
+        In normal mode: pick a new random goal after finishing.
+        In evacuation mode: reaching the exit is terminal -> no new goal.
+        """
+        if EVACUATION_MODE:
+            # We consider evacuation complete for this agent.
+            self.finished = True
+            return
+
         self.goals_reached += 1
 
         self.goal_node = self.env.get_random_node()
@@ -190,15 +210,14 @@ class Agent:
         edge_over_capacity = state.edge_over_capacity
         global_density = state.global_density
 
-        # Ensure our path is still valid given possible new blocks
         self._ensure_path_valid()
 
-        # Reached end of path?
+        # End of path?
         if self.path_index >= len(self.path) - 1:
             self.finished = True
 
-        # Occasionally pick a fresh random goal when finished
-        if self.finished and random.random() < AGENT_REPLAN_PROB:
+        # In normal mode, occasionally pick a fresh random goal when finished
+        if (not EVACUATION_MODE) and self.finished and random.random() < AGENT_REPLAN_PROB:
             self.choose_new_goal()
 
         if self.finished:
@@ -243,7 +262,6 @@ class Agent:
         # --- avoid edges that are over capacity ---
         edge_key = (self.current_node, candidate_next)
         if edge_over_capacity.get(edge_key, False):
-            # recompute path to target using updated weights
             self.path = self._compute_path(self.current_node, target_node)
             self.path_index = 0
             if len(self.path) > 1:
@@ -254,12 +272,12 @@ class Agent:
 
         threshold = DENSITY_THRESHOLD
         if self.agent_type == "panic":
-            threshold += 2  # panic agents tolerate more crowding
+            threshold += 2
 
         if candidate_density <= threshold:
             return candidate_next
 
-        # Try to sidestep to neighbours with lower density
+        # Try sidestep with lower density
         neighbors = self.env.get_neighbors(self.current_node, accessible_only=True)
         if not neighbors:
             self.wait_steps += 1
@@ -281,7 +299,7 @@ class Agent:
             )
 
         best_node = self.current_node
-        best_score = (candidate_density, 1, 0.0)  # (density, path_penalty, -alignment)
+        best_score = (candidate_density, 1, 0.0)
 
         for n in neighbors:
             density_n = node_occupancy.get(n, 0)
