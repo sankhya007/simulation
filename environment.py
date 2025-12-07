@@ -1,36 +1,40 @@
 # environment.py
 
 import random
-from typing import List, Sequence
+from typing import List, Sequence, Optional, Dict, Tuple
 
 import networkx as nx
 
 from config import EDGE_BASE_CAPACITY
 
 
+Node = Tuple[int, int]
+LayoutMatrix = Sequence[Sequence[str]]
+
+
 class EnvironmentGraph:
     """
     Environment represented as a graph.
 
-    - Nodes: (x, y) integer positions
-      Attributes:
-        - pos: (x, y) float coordinates for drawing
-        - accessibility: "open" | "blocked" | "exit"
-        - type: "corridor" | "wall" | "exit" | ...
+    Nodes: (x, y) integer positions
+        Attributes:
+            - pos: (x, y) float coordinates for drawing
+            - accessibility: "open" | "blocked" | "exit"
+            - type: "corridor" | "wall" | "exit" | ...
 
-    - Edges: undirected connections between neighbouring nodes
-      Attributes:
-        - distance: Euclidean distance between nodes
-        - max_capacity: how many agents can be comfortably on this edge
-        - weight: cost used by pathfinding (initially == distance)
-        - dynamic_weight: congestion-adjusted cost (optional, Step 3)
+    Edges: undirected connections between neighbouring nodes
+        Attributes:
+            - distance: Euclidean distance between nodes
+            - max_capacity: how many agents can be comfortably on this edge
+            - weight: cost used by pathfinding (initially == distance)
+            - dynamic_weight: congestion-adjusted cost (optional, Step 3)
     """
 
     def __init__(
         self,
         width: int,
         height: int,
-        layout_matrix: Sequence[Sequence[str]] | None = None,
+        layout_matrix: Optional[LayoutMatrix] = None,
     ):
         """
         If layout_matrix is None:
@@ -53,10 +57,10 @@ class EnvironmentGraph:
             self._build_from_layout(layout_matrix)
 
     # ------------------------------------------------------------------
-    # PUBLIC UTILITIES
+    # PUBLIC UTILITIES (NODES)
     # ------------------------------------------------------------------
 
-    def get_random_node(self):
+    def get_random_node(self) -> Node:
         """
         Returns a random *accessible* node: accessibility in {"open", "exit"}.
         """
@@ -69,26 +73,156 @@ class EnvironmentGraph:
             raise RuntimeError("No accessible nodes available in the environment.")
         return random.choice(accessible_nodes)
 
-    def get_pos(self, node):
+    def get_random_exit_node(self) -> Optional[Node]:
+        """
+        Returns a random exit node, or None if there is no exit.
+        """
+        exits = [
+            n
+            for n, data in self.graph.nodes(data=True)
+            if data.get("accessibility") == "exit"
+        ]
+        if not exits:
+            return None
+        return random.choice(exits)
+
+    def get_pos(self, node: Node) -> Tuple[float, float]:
         return self.graph.nodes[node]["pos"]
 
-    def shortest_path(self, start, goal):
+    def is_accessible(self, node: Node) -> bool:
+        """
+        True if node is open or exit (i.e., agents can stand on it).
+        """
+        data = self.graph.nodes[node]
+        return data.get("accessibility") in ("open", "exit")
+
+    def is_exit(self, node: Node) -> bool:
+        """
+        True if node is marked as an exit.
+        """
+        data = self.graph.nodes[node]
+        return data.get("accessibility") == "exit"
+
+    def get_neighbors(self, node: Node, accessible_only: bool = True) -> List[Node]:
+        """
+        Return neighbours of given node.
+        If accessible_only is True, filters out blocked nodes.
+        """
+        neighbors = list(self.graph.neighbors(node))
+        if not accessible_only:
+            return neighbors
+
+        return [n for n in neighbors if self.is_accessible(n)]
+
+    def block_node(self, node: Node):
+        """
+        Mark a node as blocked and remove its edges.
+        Useful for dynamic obstacles / blocked path scenario.
+        """
+        if node not in self.graph:
+            return
+
+        self.graph.nodes[node]["accessibility"] = "blocked"
+        self.graph.nodes[node]["type"] = "wall"
+
+        # remove all edges from this node
+        for nbr in list(self.graph.neighbors(node)):
+            self.graph.remove_edge(node, nbr)
+
+    def unblock_node(self, node: Node, node_type: str = "corridor"):
+        """
+        Mark a node as open corridor and reconnect it to accessible neighbours.
+        """
+        if node not in self.graph:
+            return
+
+        self.graph.nodes[node]["accessibility"] = "open"
+        self.graph.nodes[node]["type"] = node_type
+
+        x, y = node
+        # Reconnect to 4-neighbours that are accessible
+        candidate_neighbors = [
+            (x - 1, y),
+            (x + 1, y),
+            (x, y - 1),
+            (x, y + 1),
+        ]
+        for nbr in candidate_neighbors:
+            if nbr in self.graph and self.is_accessible(nbr):
+                self._add_edge_with_defaults(node, nbr)
+
+    def mark_exit(self, node: Node):
+        """
+        Convert a node into an exit node. Agents can still stand on it.
+        """
+        if node not in self.graph:
+            return
+        self.graph.nodes[node]["accessibility"] = "exit"
+        self.graph.nodes[node]["type"] = "exit"
+
+    # ------------------------------------------------------------------
+    # PATHFINDING
+    # ------------------------------------------------------------------
+
+    def shortest_path(self, start: Node, goal: Node) -> List[Node]:
         """
         Shortest path using A* with the 'weight' edge attribute.
-
-        This supports dynamic weights later (congestion-aware routing).
         """
         try:
             path = nx.astar_path(
                 self.graph,
                 start,
                 goal,
-                heuristic=lambda a, b: 0,  # we can add a geometric heuristic later
+                heuristic=lambda a, b: 0,  # can be replaced with geometric heuristic
                 weight="weight",
             )
         except nx.NetworkXNoPath:
             path = [start]
         return path
+
+    def shortest_path_to_nearest_exit(self, start: Node) -> List[Node]:
+        """
+        Finds the nearest exit (by path cost) and returns the path to it.
+        If no exit exists or no path, returns [start].
+        """
+        # collect all exits
+        exit_nodes = [
+            n
+            for n, data in self.graph.nodes(data=True)
+            if data.get("accessibility") == "exit"
+        ]
+        if not exit_nodes:
+            # no exits defined
+            return [start]
+
+        # find best exit by running shortest path to each (could be optimized)
+        best_path: Optional[List[Node]] = None
+        best_cost: float = float("inf")
+
+        for exit_node in exit_nodes:
+            try:
+                path = nx.astar_path(
+                    self.graph,
+                    start,
+                    exit_node,
+                    heuristic=lambda a, b: 0,
+                    weight="weight",
+                )
+                # path cost = sum of edge weights
+                cost = 0.0
+                for i in range(len(path) - 1):
+                    u = path[i]
+                    v = path[i + 1]
+                    cost += self.graph[u][v].get("weight", 1.0)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_path = path
+            except nx.NetworkXNoPath:
+                continue
+
+        if best_path is None:
+            return [start]
+        return best_path
 
     # ------------------------------------------------------------------
     # BUILDERS
@@ -116,7 +250,7 @@ class EnvironmentGraph:
                 if y + 1 < self.height:
                     self._add_edge_with_defaults((x, y), (x, y + 1))
 
-    def _build_from_layout(self, layout_matrix: Sequence[Sequence[str]]):
+    def _build_from_layout(self, layout_matrix: LayoutMatrix):
         """
         Build graph from a given layout matrix (list of rows).
 
@@ -146,17 +280,16 @@ class EnvironmentGraph:
             for x, cell in enumerate(row):
                 cell = str(cell)
 
-                if cell in (".", "0"):  # open corridor
+                if cell in (".", "0"):
                     accessibility = "open"
                     node_type = "corridor"
-                elif cell in ("#", "1"):  # blocked / wall
+                elif cell in ("#", "1"):
                     accessibility = "blocked"
                     node_type = "wall"
-                elif cell.upper() == "E":  # exit
+                elif cell.upper() == "E":
                     accessibility = "exit"
                     node_type = "exit"
                 else:
-                    # default to open corridor for unknown symbols
                     accessibility = "open"
                     node_type = "corridor"
 
@@ -171,28 +304,26 @@ class EnvironmentGraph:
         for y in range(self.height):
             for x in range(self.width):
                 node = (x, y)
-                data = self.graph.nodes[node]
-                if data.get("accessibility") not in ("open", "exit"):
-                    # do not connect blocked nodes
+                if not self.is_accessible(node):
                     continue
 
                 # right neighbour
                 if x + 1 < self.width:
                     nbr = (x + 1, y)
-                    if self.graph.nodes[nbr].get("accessibility") in ("open", "exit"):
+                    if self.is_accessible(nbr):
                         self._add_edge_with_defaults(node, nbr)
 
                 # up neighbour
                 if y + 1 < self.height:
                     nbr = (x, y + 1)
-                    if self.graph.nodes[nbr].get("accessibility") in ("open", "exit"):
+                    if self.is_accessible(nbr):
                         self._add_edge_with_defaults(node, nbr)
 
     # ------------------------------------------------------------------
     # EDGE HELPERS
     # ------------------------------------------------------------------
 
-    def _add_edge_with_defaults(self, u, v):
+    def _add_edge_with_defaults(self, u: Node, v: Node):
         """
         Add an edge between u and v with default distance, capacity, and weight.
         """
@@ -215,12 +346,12 @@ class EnvironmentGraph:
         """
         Reset all edges so that 'weight' == base 'distance' (no congestion).
         """
-        for u, v, data in self.graph.edges(data=True):
+        for _, _, data in self.graph.edges(data=True):
             base = data.get("distance", 1.0)
             data["weight"] = base
             data["dynamic_weight"] = base
 
-    def set_edge_dynamic_weight(self, u, v, current_occupancy: int):
+    def set_edge_dynamic_weight(self, u: Node, v: Node, current_occupancy: int):
         """
         Update a single edge's dynamic weight based on how many agents
         are currently using it (current_occupancy).
@@ -229,25 +360,23 @@ class EnvironmentGraph:
             congestion_ratio = max(0, occupancy - capacity) / capacity
             dynamic_weight = distance * (1 + congestion_ratio)
 
-        and 'weight' is also updated so A* uses the new cost.
+        And 'weight' is also updated so A* uses the new cost.
         """
         edge_data = self.graph[u][v]
         base_distance = edge_data.get("distance", 1.0)
         capacity = edge_data.get("max_capacity", EDGE_BASE_CAPACITY)
 
-        # how far beyond capacity we are (0 if below capacity)
         over = max(0, current_occupancy - capacity)
         congestion_ratio = over / max(1, capacity)
 
         dynamic_weight = base_distance * (1.0 + congestion_ratio)
 
         edge_data["dynamic_weight"] = dynamic_weight
-        edge_data["weight"] = dynamic_weight  # used by shortest_path
+        edge_data["weight"] = dynamic_weight
 
-    # Convenience for later if you want a full update given an occupancy map:
     def update_all_edge_weights_from_occupancy(
         self,
-        occupancy_map: dict[tuple, int],
+        occupancy_map: Dict[Tuple[Node, Node], int],
     ):
         """
         occupancy_map: dict[(u, v)] -> occupancy count
@@ -256,7 +385,7 @@ class EnvironmentGraph:
         This lets the simulation pass in live congestion info and get
         congestion-aware edge weights.
         """
-        for u, v, data in self.graph.edges(data=True):
+        for u, v, _ in self.graph.edges(data=True):
             key1 = (u, v)
             key2 = (v, u)
             occ = occupancy_map.get(key1, occupancy_map.get(key2, 0))
