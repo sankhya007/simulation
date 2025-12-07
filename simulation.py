@@ -40,6 +40,7 @@ class CrowdSimulation:
         self.node_visit_counts = defaultdict(int)
         self.total_collisions = 0
         self.last_node_occupancy: Dict[Node, int] = defaultdict(int)
+        self.max_density_per_step: List[int] = []
 
         for agent in self.agents:
             self.node_visit_counts[agent.current_node] += 1
@@ -87,7 +88,7 @@ class CrowdSimulation:
             )
             agent_index += 1
 
-    # ---------- dynamic events (Step 4) ----------
+    # ---------- dynamic events ----------
 
     def _apply_dynamic_events(self, node_occupancy: Dict[Node, int]):
         """
@@ -97,7 +98,7 @@ class CrowdSimulation:
         """
         import random
 
-        # Dynamic blocking / unblocking of nodes
+        # Dynamic blocking of nodes
         if DYNAMIC_BLOCKS_ENABLED and self.time_step % BLOCK_NODE_EVERY_N_STEPS == 0:
             candidates = [
                 n
@@ -145,6 +146,7 @@ class CrowdSimulation:
         - compute group leader positions
         - build DecisionState and query each agent for desired move
         - resolve conflicts & move
+        - track exit arrivals and density metrics
         - measure collisions
         """
         self.time_step += 1
@@ -155,7 +157,11 @@ class CrowdSimulation:
             node_occupancy[agent.current_node] += 1
         self.last_node_occupancy = node_occupancy
 
-        # 2) apply dynamic environment events (blocked paths, exits)
+        # track max density this step
+        max_density = max(node_occupancy.values()) if node_occupancy else 0
+        self.max_density_per_step.append(max_density)
+
+        # 2) apply dynamic environment events
         self._apply_dynamic_events(node_occupancy)
 
         # 3) edge occupancy approximation from node occupancy, then update weights
@@ -228,7 +234,13 @@ class CrowdSimulation:
             agent.move_to(target)
             self.node_visit_counts[agent.current_node] += 1
 
-        # 10) collisions
+        # 10) mark exit arrivals (for evacuation metrics)
+        for agent in self.agents:
+            if agent.exit_time_step is None and self.env.is_exit(agent.current_node):
+                agent.exit_reached = True
+                agent.exit_time_step = self.time_step
+
+        # 11) collisions
         self._update_collisions()
 
     # ---------- metrics & helpers ----------
@@ -274,3 +286,26 @@ class CrowdSimulation:
 
         coll_counts = [a.collisions for a in self.agents]
         print(f"Average collisions/agent: {np.mean(coll_counts):.2f}")
+
+        wait_counts = [a.wait_steps for a in self.agents]
+        print(f"Average waits/agent: {np.mean(wait_counts):.2f}")
+
+        replan_counts = [a.replans for a in self.agents]
+        print(f"Average replans/agent: {np.mean(replan_counts):.2f}")
+
+        # Path optimality (based on initial goal)
+        ratios = []
+        for a in self.agents:
+            if a.initial_shortest_path_len > 0:
+                ratios.append(a.steps_taken / a.initial_shortest_path_len)
+        if ratios:
+            print(f"Avg steps / optimal(initial) ratio: {np.mean(ratios):.2f}")
+
+        # Exit metrics (for evacuation scenarios)
+        exit_agents = [a for a in self.agents if a.exit_reached]
+        if exit_agents:
+            times = [a.exit_time_step for a in exit_agents if a.exit_time_step is not None]
+            print(f"Agents that reached an exit: {len(exit_agents)}/{len(self.agents)}")
+            print(f"Average exit time step: {np.mean(times):.2f}")
+        else:
+            print("No agents reached an exit (in this scenario).")

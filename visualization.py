@@ -11,6 +11,7 @@ from matplotlib.lines import Line2D
 from environment import EnvironmentGraph
 from simulation import CrowdSimulation
 from config import GRID_WIDTH, GRID_HEIGHT, NUM_AGENTS, MAX_STEPS, SEED
+from analysis import plot_travel_time_histogram, plot_max_density_over_time
 
 
 def run_visual_simulation():
@@ -37,21 +38,17 @@ def run_visual_simulation():
         x2, y2 = pos[v]
         ax.plot([x1, x2], [y1, y2], linewidth=0.4, alpha=0.25)
 
-    # --- initial node classification: exits / blocked / open ---
+    # --- helpers for node types ---
     def get_exit_nodes():
         return [n for n in env.graph.nodes() if env.is_exit(n)]
 
     def get_blocked_nodes():
         return [n for n, d in env.graph.nodes(data=True) if not env.is_accessible(n)]
 
-    # initially, mark the border as exits if you want (optional)
-    # for x in range(env.width):
-    #     env.mark_exit((x, 0))
-
+    # initial sets
     exit_nodes = get_exit_nodes()
     blocked_nodes = get_blocked_nodes()
 
-    # scatter for exits
     exit_xy = np.array([pos[n] for n in exit_nodes]) if exit_nodes else np.empty((0, 2))
     exit_scat = ax.scatter(
         exit_xy[:, 0] if len(exit_xy) > 0 else [],
@@ -64,7 +61,6 @@ def run_visual_simulation():
         zorder=3,
     )
 
-    # scatter for blocked nodes
     blocked_xy = (
         np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
     )
@@ -79,7 +75,7 @@ def run_visual_simulation():
         zorder=3,
     )
 
-    # --- live density heatmap (congestion over time) ---
+    # --- live density heatmap ---
     density_mat = sim.get_density_matrix()
     density_img = ax.imshow(
         density_mat,
@@ -134,7 +130,7 @@ def run_visual_simulation():
         zorder=5,
     )
 
-    # --- legend: node types + agent types ---
+    # --- legend ---
     legend_elements = [
         Patch(
             facecolor="limegreen",
@@ -197,19 +193,16 @@ def run_visual_simulation():
     # --- update function for animation ---
 
     def update(frame):
-        # advance the simulation
         sim.step()
 
-        # update agent positions & colors
         xs, ys, cs = get_agent_xy_and_colors()
         agent_scat.set_offsets(np.column_stack([xs, ys]))
         agent_scat.set_facecolors(cs)
 
-        # update density heatmap
         density_mat = sim.get_density_matrix()
         density_img.set_data(density_mat)
 
-        # update exits & blocked nodes (dynamic events)
+        # update exits & blocked nodes
         exit_nodes = get_exit_nodes()
         blocked_nodes = get_blocked_nodes()
 
@@ -225,7 +218,6 @@ def run_visual_simulation():
         exit_scat.set_offsets(exit_xy)
         blocked_scat.set_offsets(blocked_xy)
 
-        # update info text
         info_text.set_text(
             f"Step: {sim.time_step}\n"
             f"Agents: {len(sim.agents)}\n"
@@ -239,20 +231,21 @@ def run_visual_simulation():
         fig,
         update,
         frames=MAX_STEPS,
-        interval=60,   # ms between frames (lower = faster animation)
+        interval=60,
         blit=False,
     )
 
-    # === Optional: save MP4 for presentation/report ===
-    # Requires ffmpeg installed on your system.
+    # Optional: save MP4
     # anim.save("crowd_simulation_dynamic.mp4", fps=20, dpi=150)
 
     plt.tight_layout()
     plt.show()
 
-    # After simulation, print summary & show final density heatmap
+    # After simulation, print summary & show metrics
     sim.summary()
     show_density_heatmap(sim)
+    plot_travel_time_histogram(sim)
+    plot_max_density_over_time(sim)
 
 
 def show_density_heatmap(sim: CrowdSimulation):

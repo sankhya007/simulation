@@ -56,6 +56,15 @@ class Agent:
         - speed: probability of moving in a given tick (0..1)
         - perception_radius: how far it "sees" group / congestion
         - policy: optional external decision policy (AgentPolicy)
+
+    Metrics (Step 6):
+        - steps_taken: total moves performed
+        - wait_steps: number of ticks the agent chose to wait
+        - replans: number of path recomputations
+        - goals_reached: how many goals it completed
+        - exit_reached: whether it ever reached an exit node
+        - exit_time_step: time step at which it reached exit (if any)
+        - initial_shortest_path_len: ideal distance (no congestion) to first goal
     """
 
     _id_counter = 0
@@ -85,17 +94,44 @@ class Agent:
         self.perception_radius = perception_radius
         self.policy: Optional[AgentPolicy] = policy
 
+        # --- metrics ---
+        self.steps_taken: int = 0
+        self.wait_steps: int = 0
+        self.replans: int = 0
+        self.goals_reached: int = 0
+        self.exit_reached: bool = False
+        self.exit_time_step: Optional[int] = None
+
+        # For path optimality evaluation
+        self.initial_start: Optional[Node] = None
+        self.initial_goal: Optional[Node] = None
+        self.initial_shortest_path_len: int = 0
+
         # --- position / path ---
         self.current_node: Node = env.get_random_node()
         self.goal_node: Node = env.get_random_node()
         while self.goal_node == self.current_node:
             self.goal_node = env.get_random_node()
 
+        # store initial start/goal
+        self.initial_start = self.current_node
+        self.initial_goal = self.goal_node
+
         self.path = self._compute_path(self.current_node, self.goal_node)
         self.path_index = 0
 
+        # compute ideal (no-congestion) path length for initial goal
+        ideal_path = env.shortest_path_weighted(
+            self.initial_start,
+            self.initial_goal,
+            weight_attr="distance",
+        )
+        self.initial_shortest_path_len = max(0, len(ideal_path) - 1)
+
+        # we don't count the initial path as a "replan"
+        self.replans = 0
+
         self.finished = False
-        self.steps_taken = 0
         self.collisions = 0
 
     # ---------- policy management ----------
@@ -109,6 +145,7 @@ class Agent:
         return "distance" if self.agent_type == "panic" else "weight"
 
     def _compute_path(self, start: Node, goal: Node):
+        self.replans += 1
         weight_attr = self._weight_attr_for_routing()
         return self.env.shortest_path_weighted(start, goal, weight_attr=weight_attr)
 
@@ -130,6 +167,9 @@ class Agent:
     # ---------- goal / path management ----------
 
     def choose_new_goal(self):
+        # We assume this is called when a goal is reached (see decision logic)
+        self.goals_reached += 1
+
         self.goal_node = self.env.get_random_node()
         while self.goal_node == self.current_node:
             self.goal_node = self.env.get_random_node()
@@ -187,6 +227,7 @@ class Agent:
 
         # --- speed: slow agents sometimes wait ---
         if random.random() > self.speed:
+            self.wait_steps += 1
             return self.current_node
 
         # --- ensure path is current after any replanning ---
@@ -221,6 +262,7 @@ class Agent:
         # Try to sidestep to neighbours with lower density
         neighbors = self.env.get_neighbors(self.current_node, accessible_only=True)
         if not neighbors:
+            self.wait_steps += 1
             return self.current_node
 
         remaining_path = set(self.path[self.path_index + 1 :])
@@ -252,6 +294,7 @@ class Agent:
                 best_node = n
 
         if best_node == self.current_node and candidate_density > threshold:
+            self.wait_steps += 1
             return self.current_node
 
         return best_node
