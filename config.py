@@ -10,3 +10,6 @@ SEED = 42
 
 AGENT_REPLAN_PROB = 0.01
 COLLISION_DISTANCE = 0.25
+
+# === Environment / Edge properties ===
+EDGE_BASE_CAPACITY = 5   # how many agents an edge can comfortably support
