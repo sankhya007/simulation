@@ -11,7 +11,11 @@ from matplotlib.lines import Line2D
 from environment import EnvironmentGraph
 from simulation import CrowdSimulation
 from config import GRID_WIDTH, GRID_HEIGHT, NUM_AGENTS, MAX_STEPS, SEED
-from analysis import plot_travel_time_histogram, plot_max_density_over_time
+from analysis import (
+    plot_travel_time_histogram,
+    plot_max_density_over_time,
+    plot_metrics_by_agent_type,
+)
 
 
 def run_visual_simulation():
@@ -246,6 +250,8 @@ def run_visual_simulation():
     show_density_heatmap(sim)
     plot_travel_time_histogram(sim)
     plot_max_density_over_time(sim)
+    plot_metrics_by_agent_type(sim)
+
 
 
 def show_density_heatmap(sim: CrowdSimulation):

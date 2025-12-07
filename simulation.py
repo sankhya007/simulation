@@ -26,6 +26,91 @@ EdgeKey = Tuple[Node, Node]
 
 class CrowdSimulation:
     """Manages the whole crowd, interactions, and metrics."""
+    
+    def get_metrics_summary(self) -> Dict[str, dict]:
+        """
+        Compute global and per-agent-type metrics for analysis and plotting.
+
+        Returns a dict like:
+        {
+            "global": {...},
+            "by_type": {
+                "leader": {...},
+                "follower": {...},
+                ...
+            }
+        }
+        """
+        num_agents = len(self.agents)
+        step_counts = np.array([a.steps_taken for a in self.agents])
+        wait_counts = np.array([a.wait_steps for a in self.agents])
+        replan_counts = np.array([a.replans for a in self.agents])
+        coll_counts = np.array([a.collisions for a in self.agents])
+
+        exit_flags = np.array([1 if a.exit_reached else 0 for a in self.agents])
+        exit_times = np.array(
+            [a.exit_time_step for a in self.agents if a.exit_time_step is not None]
+        )
+
+        # path optimality ratios (ignore agents with 0 ideal length)
+        ratios = []
+        for a in self.agents:
+            if a.initial_shortest_path_len > 0:
+                ratios.append(a.steps_taken / a.initial_shortest_path_len)
+        ratios = np.array(ratios) if ratios else np.array([])
+
+        global_metrics = {
+            "num_agents": num_agents,
+            "time_steps": self.time_step,
+            "total_collisions": int(self.total_collisions),
+            "avg_steps": float(step_counts.mean()) if num_agents > 0 else 0.0,
+            "avg_waits": float(wait_counts.mean()) if num_agents > 0 else 0.0,
+            "avg_replans": float(replan_counts.mean()) if num_agents > 0 else 0.0,
+            "avg_collisions_per_agent": float(coll_counts.mean()) if num_agents > 0 else 0.0,
+            "exit_rate": float(exit_flags.mean()) if num_agents > 0 else 0.0,
+            "avg_exit_time": float(exit_times.mean()) if len(exit_times) > 0 else None,
+            "avg_steps_over_optimal": float(ratios.mean()) if len(ratios) > 0 else None,
+            "max_density_over_time": self.max_density_per_step,
+        }
+
+        # group by agent_type
+        by_type: Dict[str, dict] = {}
+        from collections import defaultdict
+
+        agents_by_type = defaultdict(list)
+        for a in self.agents:
+            agents_by_type[a.agent_type].append(a)
+
+        for t, group in agents_by_type.items():
+            n = len(group)
+            steps_t = np.array([a.steps_taken for a in group])
+            waits_t = np.array([a.wait_steps for a in group])
+            replans_t = np.array([a.replans for a in group])
+            colls_t = np.array([a.collisions for a in group])
+            exits_t = np.array([1 if a.exit_reached else 0 for a in group])
+
+            ratios_t = []
+            for a in group:
+                if a.initial_shortest_path_len > 0:
+                    ratios_t.append(a.steps_taken / a.initial_shortest_path_len)
+            ratios_t = np.array(ratios_t) if ratios_t else np.array([])
+
+            by_type[t] = {
+                "count": n,
+                "avg_steps": float(steps_t.mean()) if n > 0 else 0.0,
+                "avg_waits": float(waits_t.mean()) if n > 0 else 0.0,
+                "avg_replans": float(replans_t.mean()) if n > 0 else 0.0,
+                "avg_collisions": float(colls_t.mean()) if n > 0 else 0.0,
+                "exit_rate": float(exits_t.mean()) if n > 0 else 0.0,
+                "avg_steps_over_optimal": float(ratios_t.mean()) if len(ratios_t) > 0 else None,
+            }
+
+        return {
+            "global": global_metrics,
+            "by_type": by_type,
+        }
+
+
 
     def __init__(self, env: EnvironmentGraph, num_agents: int):
         self.env = env
