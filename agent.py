@@ -2,7 +2,8 @@
 
 import random
 import math
-from typing import Tuple, Dict, Optional
+from dataclasses import dataclass
+from typing import Tuple, Dict, Optional, Protocol
 
 from environment import EnvironmentGraph
 from config import (
@@ -14,6 +15,44 @@ from config import (
 
 
 Node = Tuple[int, int]
+EdgeKey = Tuple[Node, Node]
+
+
+@dataclass
+class DecisionState:
+    """
+    Snapshot of crowd-level information used by the agent to take a decision.
+    This is what an external Agent AI / RL policy would see.
+    """
+    time_step: int
+    node_occupancy: Dict[Node, int]
+    group_targets: Dict[int, Node]          # group_id -> leader position
+    edge_over_capacity: Dict[EdgeKey, bool] # (u, v) -> True if overcrowded
+
+    # NEW: richer info for Agent AI integration
+    agent_positions: Dict[int, Node]        # agent_id -> node
+    agent_types: Dict[int, str]             # agent_id -> "leader"/"follower"/...
+    global_density: float                   # avg agents per occupied node
+
+
+class AgentPolicy(Protocol):
+    """
+    Pluggable policy interface. You can later create your own RL/AI policy:
+
+        class MyRLPolicy:
+            def choose_action(self, agent, state, env) -> Node:
+                ...
+
+        agent.set_policy(MyRLPolicy())
+    """
+
+    def choose_action(
+        self,
+        agent: "Agent",
+        state: DecisionState,
+        env: EnvironmentGraph,
+    ) -> Node:
+        ...
 
 
 class Agent:
@@ -25,6 +64,7 @@ class Agent:
         - group_id: int or None
         - speed: probability of moving in a given tick (0..1)
         - perception_radius: how far it "sees" group / congestion
+        - policy: optional external decision policy (AgentPolicy)
     """
 
     _id_counter = 0
@@ -36,6 +76,7 @@ class Agent:
         group_id: Optional[int] = None,
         speed: Optional[float] = None,
         perception_radius: float = PERCEPTION_RADIUS,
+        policy: Optional[AgentPolicy] = None,
     ):
         self.env = env
         self.id = Agent._id_counter
@@ -52,6 +93,7 @@ class Agent:
             self.speed = speed
 
         self.perception_radius = perception_radius
+        self.policy: Optional[AgentPolicy] = policy
 
         # --- position / path ---
         self.current_node: Node = env.get_random_node()
@@ -65,6 +107,14 @@ class Agent:
         self.finished = False
         self.steps_taken = 0
         self.collisions = 0
+
+    # ---------- policy management ----------
+
+    def set_policy(self, policy: AgentPolicy):
+        """
+        Attach an external decision policy (e.g., RL agent).
+        """
+        self.policy = policy
 
     # ---------- internal helpers ----------
 
@@ -95,24 +145,36 @@ class Agent:
 
     # ---------- main decision function ----------
 
-    def desired_next_node(
-        self,
-        node_occupancy: Dict[Node, int],
-        group_targets: Dict[int, Node],
-    ) -> Node:
+    def desired_next_node(self, state: DecisionState) -> Node:
         """
         Decide which node this agent wants to move to this tick.
 
-        Uses:
-            - group-following for followers
-            - speed (slower agents may wait)
-            - local congestion avoidance using node_occupancy
+        If a custom policy is attached, defer to that.
+        Otherwise, use built-in rule-based logic (_rule_based_desired_next_node).
         """
+        if self.policy is not None:
+            return self.policy.choose_action(self, state, self.env)
+        return self._rule_based_desired_next_node(state)
+
+    def _rule_based_desired_next_node(self, state: DecisionState) -> Node:
+        """
+        Original rule-based behaviour, now using DecisionState:
+          - group following
+          - speed-based waiting
+          - local congestion avoidance
+          - global congestion-aware routing (via edge weights)
+          - avoids edges that are over capacity when possible
+          - mild 'lane preference' towards the geometric goal direction
+        """
+        node_occupancy = state.node_occupancy
+        group_targets = state.group_targets
+        edge_over_capacity = state.edge_over_capacity
+
         # Reached end of path?
         if self.path_index >= len(self.path) - 1:
             self.finished = True
 
-        # Occasionally pick a brand new goal when finished
+        # Occasionally pick a fresh random goal when finished
         if self.finished and random.random() < AGENT_REPLAN_PROB:
             self.choose_new_goal()
 
@@ -143,7 +205,7 @@ class Agent:
         if random.random() > self.speed:
             return self.current_node
 
-        # --- ensure path is current (can be affected by new congestion weights) ---
+        # --- ensure path is current (weights may have changed due to congestion) ---
 
         if self.path_index >= len(self.path) - 1:
             self.path = self._compute_path(self.current_node, target_node)
@@ -153,6 +215,20 @@ class Agent:
             return self.current_node
 
         candidate_next = self.path[self.path_index + 1]
+
+        # --- avoid edges that are over capacity (crowd-level interaction) ---
+
+        edge_key = (self.current_node, candidate_next)
+        if not edge_over_capacity.get(edge_key, False):
+            # ok, edge not over capacity; we'll still check node congestion below
+            pass
+        else:
+            # this edge is overcrowded -> try to replan, or sidestep
+            # first, recompute path to target using updated weights
+            self.path = self._compute_path(self.current_node, target_node)
+            self.path_index = 0
+            if len(self.path) > 1:
+                candidate_next = self.path[1]
 
         # --- simple congestion avoidance at node level ---
 
@@ -172,14 +248,32 @@ class Agent:
 
         remaining_path = set(self.path[self.path_index + 1 :])
 
+        # for mild lane formation: prefer neighbours roughly toward our goal
+        gx, gy = self.env.get_pos(target_node)
+        cx, cy = self.env.get_pos(self.current_node)
+        goal_dir = (gx - cx, gy - cy)
+
+        def direction_alignment(n: Node) -> float:
+            nx_, ny_ = self.env.get_pos(n)
+            step_vec = (nx_ - cx, ny_ - cy)
+            norm_goal = math.hypot(*goal_dir) or 1.0
+            norm_step = math.hypot(*step_vec) or 1.0
+            # cosine similarity: [-1, 1]
+            return (goal_dir[0] * step_vec[0] + goal_dir[1] * step_vec[1]) / (
+                norm_goal * norm_step
+            )
+
         best_node = self.current_node
-        best_score = (candidate_density, 1)  # (density, path_penalty)
+        # score = (density, path_penalty, -alignment) so we prefer lower density,
+        # stay on our planned path, and align with goal direction
+        best_score = (candidate_density, 1, 0.0)
 
         for n in neighbors:
             density_n = node_occupancy.get(n, 0)
             on_path = n in remaining_path
             path_penalty = 0 if on_path else 1
-            score = (density_n, path_penalty)
+            align = direction_alignment(n)
+            score = (density_n, path_penalty, -align)
             if score < best_score:
                 best_score = score
                 best_node = n

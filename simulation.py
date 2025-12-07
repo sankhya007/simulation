@@ -7,11 +7,12 @@ from typing import List, Tuple, Dict
 import numpy as np
 
 from environment import EnvironmentGraph
-from agent import Agent
-from config import COLLISION_DISTANCE, GROUP_SIZE
+from agent import Agent, DecisionState
+from config import COLLISION_DISTANCE, GROUP_SIZE, EDGE_BASE_CAPACITY
 
 
 Node = Tuple[int, int]
+EdgeKey = Tuple[Node, Node]
 
 
 class CrowdSimulation:
@@ -83,9 +84,9 @@ class CrowdSimulation:
         """
         Single sim tick:
         - compute node occupancy
-        - update edge weights based on congestion
+        - approximate edge congestion and update edge weights
         - compute group leader positions
-        - agents choose desired next node
+        - build DecisionState and query each agent for desired move
         - resolve conflicts & move
         - measure collisions
         """
@@ -98,10 +99,16 @@ class CrowdSimulation:
         self.last_node_occupancy = node_occupancy
 
         # 2) edge occupancy approximation from node occupancy, then update weights
-        edge_occupancy: Dict[Tuple[Node, Node], int] = {}
+        edge_occupancy: Dict[EdgeKey, int] = {}
+        edge_over_capacity: Dict[EdgeKey, bool] = {}
+
         for u, v in self.env.graph.edges():
             occ = node_occupancy.get(u, 0) + node_occupancy.get(v, 0)
             edge_occupancy[(u, v)] = occ
+
+            capacity = self.env.graph[u][v].get("max_capacity", EDGE_BASE_CAPACITY)
+            edge_over_capacity[(u, v)] = occ > capacity
+
         self.env.update_all_edge_weights_from_occupancy(edge_occupancy)
 
         # 3) group leader positions
@@ -110,13 +117,32 @@ class CrowdSimulation:
             if agent.is_leader and agent.group_id is not None:
                 group_targets[agent.group_id] = agent.current_node
 
-        # 4) each agent chooses desired next node
+        # 4) NEW: agent positions / types + global density
+        agent_positions: Dict[int, Node] = {a.id: a.current_node for a in self.agents}
+        agent_types: Dict[int, str] = {a.id: a.agent_type for a in self.agents}
+
+        total_agents = len(self.agents)
+        occupied_nodes = len(node_occupancy)
+        global_density = total_agents / max(1, occupied_nodes)
+
+        # 5) build state snapshot for this tick
+        state = DecisionState(
+            time_step=self.time_step,
+            node_occupancy=node_occupancy,
+            group_targets=group_targets,
+            edge_over_capacity=edge_over_capacity,
+            agent_positions=agent_positions,
+            agent_types=agent_types,
+            global_density=global_density,
+        )
+
+        # 6) each agent chooses desired next node
         desires: Dict[int, Node] = {}
         for agent in self.agents:
-            desired = agent.desired_next_node(node_occupancy, group_targets)
+            desired = agent.desired_next_node(state)
             desires[agent.id] = desired
 
-        # 5) conflict resolution
+        # 7) conflict resolution
         node_to_agents = defaultdict(list)
         for agent_id, node in desires.items():
             node_to_agents[node].append(agent_id)
@@ -134,7 +160,7 @@ class CrowdSimulation:
                     if loser != winner:
                         allowed_moves[loser] = None
 
-        # 6) apply movements
+        # 8) apply movements
         for agent in self.agents:
             target = allowed_moves.get(agent.id, None)
             if target is None:
@@ -142,7 +168,7 @@ class CrowdSimulation:
             agent.move_to(target)
             self.node_visit_counts[agent.current_node] += 1
 
-        # 7) collisions
+        # 9) collisions
         self._update_collisions()
 
     # ---------- metrics & helpers ----------
