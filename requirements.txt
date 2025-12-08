@@ -1,6 +1,25 @@
-networkx>=3.0
-matplotlib>=3.7.0
-numpy>=1.24.0
-pandas>=2.0.0
-pillow>=10.0.0
-ezdxf>=1.1.0
+# Core scientific stack
+numpy==1.26.4
+scipy==1.11.4
+
+# Visualization
+matplotlib==3.8.2
+
+# Image loading (PNG/JPG)
+Pillow==10.2.0
+
+# DXF CAD file parsing
+ezdxf==1.1.3
+
+# Multiprocessing helpers (optional but safe)
+tqdm==4.66.2
+
+# CLI parsing
+argparse-addons==0.12.0
+
+# JSON serialization / helpers
+orjson==3.9.15
+
+# (Optional) for saving MP4 animations
+imageio==2.33.1
+imageio-ffmpeg==0.4.9

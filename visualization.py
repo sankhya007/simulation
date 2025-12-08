@@ -1,6 +1,8 @@
 # visualization.py
 
 import random
+from PIL import Image
+import os
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +10,7 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
+from config import RASTER_DOWNSCALE_FACTOR
 
 import config
 from simulation import CrowdSimulation
@@ -262,3 +265,39 @@ def show_density_heatmap(sim: CrowdSimulation):
     plt.ylabel("Y")
     plt.tight_layout()
     plt.show()
+
+
+def overlay_results_on_image(sim, ax, map_path: str):
+    """
+    Draw the original floorplan image under the simulation axes `ax` so
+    grid cells align with pixel blocks used to produce the layout.
+
+    Uses the same downscale factor as raster_loader.load_raster_floorplan_to_layout
+    so the resulting image aligns exactly with the grid (one image cell -> one grid cell).
+    (raster_loader resizes image using Image.NEAREST with factor RASTER_DOWNSCALE_FACTOR).
+    See raster_loader.py for the original logic. :contentReference[oaicite:1]{index=1}
+    """
+
+    if not map_path or not os.path.exists(map_path):
+        return  # nothing to overlay
+
+    # Open original image and downscale same as raster_loader
+    img = Image.open(map_path).convert("RGB")
+    if RASTER_DOWNSCALE_FACTOR > 1:
+        w0, h0 = img.size
+        w = max(1, w0 // RASTER_DOWNSCALE_FACTOR)
+        h = max(1, h0 // RASTER_DOWNSCALE_FACTOR)
+        img_ds = img.resize((w, h), Image.NEAREST)
+    else:
+        img_ds = img
+        w, h = img.size
+
+    # env grid dimensions (should match layout->env mapping)
+    env = sim.env  # CrowdSimulation should reference env; adjust if your API differs
+    # The grid cell <-> image pixel mapping: each grid cell corresponds to one downsampled pixel.
+    # We use the same extent as the density heatmap: (-0.5, env.width-0.5, -0.5, env.height-0.5)
+    # so image covers the same coordinate frame as the grid.
+    extent = (-0.5, env.width - 0.5, -0.5, env.height - 0.5)
+
+    # Draw the image under everything
+    ax.imshow(img_ds, origin="lower", extent=extent, zorder=-1, interpolation="nearest", alpha=0.9)

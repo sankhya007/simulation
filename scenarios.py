@@ -1,161 +1,112 @@
 # scenarios.py
+"""
+Scenario presets and helpers for configuring EnvironmentGraph instances.
 
-from dataclasses import dataclass
-from typing import Optional, Dict
+Provides:
+ - SCENARIO_PRESETS: mapping of names -> simple config dict
+ - configure_environment_for_scenario(name, env): apply changes to an EnvironmentGraph
+ - configure_environment_for_active_scenario(env): convenience wrapper used by visualization.py
+ - load_and_apply_scenario(name): builds environment (grid or from map) and returns it
+"""
+
+from typing import Dict, Any, Optional, Tuple
 
 import config
+from maps import load_layout_matrix_from_config
 from environment import EnvironmentGraph
 
-
-@dataclass
-class Scenario:
-    name: str
-    description: str
-    num_agents: int
-    dynamic_blocks: bool
-    dynamic_exits: bool
-    block_every_n: int
-    block_prob: float
-    exit_toggle_every_n: int
-    evacuation_mode: bool
-    # How to set initial exits on the grid:
-    #   "none"    -> don't change exits (use map / layout defaults)
-    #   "borders" -> mark all border cells as exits
-    #   "corners" -> only corners as exits
-    initial_exit_strategy: str
-
-
-# --- Scenario presets -------------------------------------------------------
-
-SCENARIO_PRESETS: Dict[str, Scenario] = {
-    # 1. Normal navigation
-    "normal": Scenario(
-        name="normal",
-        description="Medium crowd, no dynamic obstacles or exits.",
-        num_agents=60,
-        dynamic_blocks=False,
-        dynamic_exits=False,
-        block_every_n=40,
-        block_prob=0.4,
-        exit_toggle_every_n=80,
-        evacuation_mode=False,
-        initial_exit_strategy="none",
-    ),
-
-    # 2. High-density crowd
-    "high_density": Scenario(
-        name="high_density",
-        description="High-density crowd to stress-test congestion handling.",
-        num_agents=300,
-        dynamic_blocks=False,
-        dynamic_exits=False,
-        block_every_n=40,
-        block_prob=0.4,
-        exit_toggle_every_n=80,
-        evacuation_mode=False,
-        initial_exit_strategy="none",
-    ),
-
-    # 3. Blocked paths / dynamic obstacles
-    "blocked": Scenario(
-        name="blocked",
-        description="Dynamic blocked nodes forcing frequent rerouting.",
-        num_agents=120,
-        dynamic_blocks=True,
-        dynamic_exits=False,
-        block_every_n=25,
-        block_prob=0.6,
-        exit_toggle_every_n=80,
-        evacuation_mode=False,
-        initial_exit_strategy="none",
-    ),
-
-    # 4. Emergency evacuation
-    "evacuation": Scenario(
-        name="evacuation",
-        description="Evacuation to border exits; agents head to nearest exit.",
-        num_agents=150,
-        dynamic_blocks=True,
-        dynamic_exits=False,   # keep exits stable during evacuation
-        block_every_n=35,
-        block_prob=0.3,
-        exit_toggle_every_n=80,
-        evacuation_mode=True,
-        initial_exit_strategy="borders",   # mark border as exits
-    ),
+# Simple scenario presets. Each entry contains optional hooks / params that will be
+# applied to the EnvironmentGraph instance by configure_environment_for_scenario.
+SCENARIO_PRESETS: Dict[str, Dict[str, Any]] = {
+    "normal": {"num_agents": config.NUM_AGENTS, "evacuation": False},
+    "high_density": {"num_agents": max(config.NUM_AGENTS, 300), "evacuation": False},
+    "blocked": {"num_agents": config.NUM_AGENTS, "evacuation": False, "dynamic_blocks": True},
+    "evacuation": {"num_agents": config.NUM_AGENTS, "evacuation": True},
+    # Floorplan-oriented scenarios (aliases)
+    "floorplan_image_normal": {"num_agents": config.NUM_AGENTS, "evacuation": False},
+    "floorplan_image_evacuation": {"num_agents": config.NUM_AGENTS, "evacuation": True},
+    "floorplan_cad_evac": {"num_agents": config.NUM_AGENTS, "evacuation": True},
 }
 
-_ACTIVE_SCENARIO: Optional[Scenario] = None
 
-
-# --- Scenario management ----------------------------------------------------
-
-def load_and_apply_scenario(name: str) -> Scenario:
+def configure_environment_for_scenario(name: str, env: EnvironmentGraph, **overrides) -> None:
     """
-    Select a scenario preset by name and apply it to config globals.
-    This is called from main.py and experiment.py.
+    Apply scenario-specific configuration to an EnvironmentGraph instance.
+
+    - name: scenario name in SCENARIO_PRESETS
+    - env: EnvironmentGraph to modify in-place
+    - overrides: optional params (e.g. num_agents, evacuation, dynamic_blocks)
     """
-    global _ACTIVE_SCENARIO
-    key = name.lower()
+    preset = SCENARIO_PRESETS.get(name)
+    if preset is None:
+        raise ValueError(f"Unknown scenario '{name}'")
 
-    if key not in SCENARIO_PRESETS:
-        raise ValueError(
-            f"Unknown scenario '{name}'. "
-            f"Available: {', '.join(sorted(SCENARIO_PRESETS.keys()))}"
-        )
+    # merge
+    cfg = dict(preset)
+    cfg.update(overrides)
 
-    scenario = SCENARIO_PRESETS[key]
-    _ACTIVE_SCENARIO = scenario
+    # Example effects:
+    # - Evacuation mode: mark env.evacuate_mode or set agent defaults; we set config.EVACUATION_MODE if present
+    if cfg.get("evacuation"):
+        try:
+            import config as _conf
 
-    # Apply to config: this is why high_density will really use 300 agents, etc.
-    config.NUM_AGENTS = scenario.num_agents
-    config.DYNAMIC_BLOCKS_ENABLED = scenario.dynamic_blocks
-    config.DYNAMIC_EXITS_ENABLED = scenario.dynamic_exits
-    config.BLOCK_NODE_EVERY_N_STEPS = scenario.block_every_n
-    config.BLOCK_NODE_PROB = scenario.block_prob
-    config.EXIT_TOGGLE_EVERY_N_STEPS = scenario.exit_toggle_every_n
-    config.EVACUATION_MODE = scenario.evacuation_mode
+            _conf.EVACUATION_MODE = True
+        except Exception:
+            pass
 
-    return scenario
+    # - dynamic blocks toggle (the EnvironmentGraph should check this flag)
+    if cfg.get("dynamic_blocks"):
+        try:
+            import config as _conf
+
+            _conf.DYNAMIC_BLOCKS_ENABLED = True
+        except Exception:
+            pass
+
+    # - You may want to set other per-env flags here (e.g., create initial blocked nodes)
+    # If the preset carries explicit metadata to apply on env (not used by default), do it:
+    env.scenario_name = name  # store name for downstream code / logging
 
 
-def get_active_scenario() -> Optional[Scenario]:
-    return _ACTIVE_SCENARIO
-
-
-def configure_environment_for_active_scenario(env: EnvironmentGraph):
+def configure_environment_for_active_scenario(env: EnvironmentGraph) -> None:
     """
-    Apply environment-level settings for the active scenario
-    (initial exits etc.). Called from visualization.py.
+    Convenience wrapper used in other modules: apply the scenario currently stored on env,
+    or fallback to DEFAULT_SCENARIO_NAME.
     """
-    scenario = _ACTIVE_SCENARIO
-    if scenario is None:
-        return
-
-    # If we don't want to touch exits, just return.
-    if scenario.initial_exit_strategy == "none":
-        return
-
-    if scenario.initial_exit_strategy == "borders":
-        # Mark ALL border nodes as exits (works both for grid and map-based envs)
-        for x in range(env.width):
-            env.mark_exit((x, 0))
-            env.mark_exit((x, env.height - 1))
-        for y in range(env.height):
-            env.mark_exit((0, y))
-            env.mark_exit((env.width - 1, y))
-
-    elif scenario.initial_exit_strategy == "corners":
-        corners = [
-            (0, 0),
-            (0, env.height - 1),
-            (env.width - 1, 0),
-            (env.width - 1, env.height - 1),
-        ]
-        for node in corners:
-            env.mark_exit(node)
+    name = getattr(env, "scenario_name", None) or config.DEFAULT_SCENARIO_NAME
+    configure_environment_for_scenario(name, env)
 
 
-def list_scenarios():
-    """Small helper if you want to print available scenarios somewhere."""
-    return sorted(SCENARIO_PRESETS.keys())
+def load_and_apply_scenario(name: str, **overrides) -> Tuple[EnvironmentGraph, Dict[str, Any]]:
+    """
+    Build an EnvironmentGraph according to MAP_MODE (grid / raster / dxf) and apply scenario.
+    Returns (env, meta) where meta can contain map loader metadata (e.g., raster extents).
+    """
+    layout_or_tuple = load_layout_matrix_from_config()
+
+    # Support two possible return types:
+    #  - layout (List[List[str]])
+    #  - (layout, meta) tuple if loader provides metadata
+    meta: Dict[str, Any] = {}
+    if isinstance(layout_or_tuple, tuple) and len(layout_or_tuple) == 2:
+        layout, meta = layout_or_tuple
+    else:
+        layout = layout_or_tuple
+
+    if layout is None:
+        # synthetic grid
+        env = EnvironmentGraph(config.GRID_WIDTH, config.GRID_HEIGHT)
+    else:
+        # layout provided -> use the matrix to build the env
+        # Some EnvironmentGraph constructors expect width=0,height=0 when layout_matrix supplied
+        env = EnvironmentGraph(width=0, height=0, layout_matrix=layout)
+
+    # persist meta and scenario name to env for downstream use
+    env.map_meta = meta
+    env.scenario_name = name
+
+    # Apply scenario changes
+    configure_environment_for_scenario(name, env, **overrides)
+
+    return env, meta

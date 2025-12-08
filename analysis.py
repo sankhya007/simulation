@@ -2,10 +2,16 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import csv
+
 from PIL import Image
+from typing import List, Tuple, Dict
+from typing import Tuple
 
 from simulation import CrowdSimulation
 from config import MAP_MODE, MAP_FILE
+
+Node = Tuple[int, int]
 
 
 def plot_travel_time_histogram(sim: CrowdSimulation):
@@ -253,3 +259,51 @@ def overlay_results_on_floorplan(sim, env, top_k: int = 5):
 
     plt.tight_layout()
     plt.show()
+
+def compute_bottlenecks(sim, top_k: int = 10) -> List[Tuple[Node, int]]:
+    """
+    Return the top_k bottleneck nodes as (node_tuple, visit_count) sorted descending.
+    Uses sim.node_visit_counts (a dict mapping node -> visit_count).
+    """
+    counts = sim.node_visit_counts  # expected: dict {(x,y): int}
+    if not counts:
+        return []
+
+    # Convert to list and sort
+    items = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    top = items[:top_k]
+    return top  # list of ((x,y), count)
+
+def export_bottlenecks_to_csv(bottlenecks: List[Tuple[Node, int]], out_path: str):
+    """
+    Save top bottlenecks to CSV with columns: x,y,visits
+    """
+    with open(out_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["x", "y", "visits"])
+        for (x, y), visits in bottlenecks:
+            writer.writerow([x, y, visits])
+            
+            
+def map_cell_to_dxf_coords(cell: Tuple[int, int], env, dxf_bbox: Tuple[float, float, float, float]) -> Tuple[float, float]:
+    """
+    Map a grid cell (x,y) to DXF coordinates using the bbox returned by the DXF loader:
+        dxf_bbox = (min_x, max_x, min_y, max_y)
+    The EnvironmentGraph built from layout has env.width and env.height (grid dims).
+    We'll map the center of the cell to the corresponding DXF coordinate.
+
+    Returns (real_x, real_y).
+    """
+    (x, y) = cell
+    min_x, max_x, min_y, max_y = dxf_bbox
+
+    grid_w = env.width
+    grid_h = env.height
+
+    if grid_w <= 0 or grid_h <= 0:
+        raise ValueError("Environment grid has invalid width/height")
+
+    # cell center in normalized CAD coords
+    real_x = min_x + (x + 0.5) * ((max_x - min_x) / grid_w)
+    real_y = min_y + (y + 0.5) * ((max_y - min_y) / grid_h)
+    return (real_x, real_y)

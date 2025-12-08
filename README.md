@@ -1,279 +1,249 @@
-# Graph-Based Crowd Simulation with Agent AI
+# Crowd Simulation System – Floorplan-Aware Multi-Agent Evacuation Simulator
 
-## Overview
+This project is a **floorplan-aware crowd simulation engine** that supports:
 
-This project implements a **graph-based crowd simulation framework** designed for academic and research use, particularly as a **final-year Computer Science & Engineering project**.  
-It models crowds as intelligent agents navigating a graph-based environment with **congestion-aware routing**, **group behavior**, **multiple AI strategies**, **dynamic obstacles**, and **emergency evacuation logic**.
+- Raster floorplans (PNG/JPG)
+- CAD floorplans (DXF)
+- Dynamic scenario loading
+- Evacuation modelling
+- Bottleneck detection
+- Batch simulation with multiprocessing
+- Heatmap + overlay visualisation on real maps
+- Exporting metrics, CSV reports, and annotated images
 
-The system is not just a visual demo — it supports **quantitative experimentation**, **batch runs**, and **comparative analysis of agent strategies**, making it suitable for evaluation, reporting, and viva demonstrations.
+The simulation builds a grid/graph from maps and runs multi-agent navigation using:
+- Shortest-path routing
+- Congestion-aware routing
+- Safe routing
+- Mixed strategies
 
 ---
 
-## Key Concepts
+## 🚀 Features
 
-- **Graph-based environment**: Nodes represent locations, edges represent walkable paths.
-- **Agents**: Autonomous entities with goals, speed, perception, group membership, and navigation strategy.
-- **Congestion-aware routing**: Edge weights and traversal time increase with crowd density.
-- **Scenarios**: Predefined settings such as normal navigation, high-density crowds, blocked paths, and evacuation.
-- **Metrics & analysis**: Travel time, congestion, collisions, evacuation KPIs.
-- **Visualization**: 2D top-down view with live density, exits, and blocked regions.
+### ✔ 1. Raster Floorplan Loader (PNG/JPG)
+- Converts floorplans into grid layout
+- Detects:
+  - Walls (black / dark grey)
+  - Walkable regions
+  - Doors
+  - Exits (green or user-defined)
+- Supports downsampling for performance
+- Produces a `layout_matrix` used by the `EnvironmentGraph`
+
+### ✔ 2. CAD Floorplan Loader (DXF)
+- Reads DXF via `ezdxf`
+- Recognizes:
+  - Wall layers
+  - Door layers
+  - Exit layers
+- Rasterizes DXF into grid
+- Returns:
+  - `layout_matrix`
+  - Metadata: bounding box, resolution, transformation mapping
+- Enables mapping bottleneck grid cells back to real DXF coordinates
 
 ---
 
-## Project Structure
+## ✔ 3. Simulation Engine
+Built around:
+- `EnvironmentGraph`
+- `CrowdSimulation`
+- `Agent` logic
+
+Supports:
+- Collision detection
+- Density tracking
+- Dynamic blocked nodes
+- Evacuation mode (nearest exit routing)
+- Multi-agent behaviours
+
+Each simulation step logs:
+- Agent movement
+- Node occupancy
+- Collisions
+- Evacuation times
+
+---
+
+## ✔ 4. Scenarios System
+Selectable at runtime:
+
+| Scenario | Description |
+|---------|-------------|
+| `normal` | Normal dispersed navigation |
+| `high_density` | Many agents, stress-test the map |
+| `blocked` | Dynamic blocked paths |
+| `evacuation` | Emergency evacuation to nearest exits |
+| `floorplan_image_*` | Raster floorplan simulations |
+| `floorplan_dxf_*` | CAD floorplan simulations |
+
+You can extend scenarios easily through `scenarios.py`.
+
+---
+
+## ✔ 5. Visualization
+Two layers:
+
+### **Grid-based visual simulation**
+Shows:
+- Agents (colored by type)
+- Exits
+- Blocked cells
+- Density heatmap
+- Congestion level
+
+### **Overlay visualization (NEW)**
+- Shows bottleneck heatmaps *directly on the original floorplan image*
+- Supports PNG and DXF (via rasterization)
+- Marks top-K bottlenecks using:
+  - Red circles
+  - Labels `B1`, `B2`, ...
+
+---
+
+## ✔ 6. Bottleneck Detection
+Identifies high-density graph nodes using:
+
+- Total visit counts
+- Time-window average density
+- Edge congestion
+- Repeated batch trials aggregation
+
+Outputs:
+- A ranked list of bottleneck grid cells
+- (DXF mode) CSV mapping grid cells → real world CAD coordinates
+
+---
+
+## ✔ 7. Batch Simulation (Multiprocessing)
+Run parallel experiments:
+
+```bash
+python main.py batch --trials 7 --workers 6 --target-percent 0.95 --agents 300 --steps 1200
+```
+
+Batch runner:
+- Runs N trials in parallel
+- Gathers bottlenecks across runs
+- Saves:
+  - Metrics JSON
+  - CSV bottleneck coordinates
+  - Overlayed PNG heatmaps
+  - Serialized simulation dumps (if enabled)
+
+---
+
+## ✔ 8. CLI Commands
+
+### List scenarios
+```bash
+python main.py list
+```
+
+### Visual simulation
+```bash
+python main.py visual normal
+```
+
+### Run a batch of trials
+```bash
+python main.py batch --trials 5 --workers 4
+```
+
+### Run evacuation with overlays
+```bash
+python main.py run evacuation --agents 300 --steps 1500 --overlay --out-dir results
+```
+
+---
+
+## 📁 Folder Structure
 
 ```
 crowd/
 │
-├── main.py                # Interactive visual simulation runner
-├── experiment.py          # Batch experiment runner for quantitative analysis
+├── main.py                   # CLI + visual runner + batch engine
+├── simulation.py             # CrowdSimulation engine
+├── agent.py                  # Agent behaviours
+├── environment.py            # Grid/graph environment
 │
-├── config.py              # Global configuration & tunable parameters
-├── scenarios.py           # Scenario presets (normal, evacuation, blocked, etc.)
+├── maps/
+│   ├── raster_loader.py      # PNG/JPG → layout
+│   ├── dxf_loader.py         # DXF → layout (+ metadata)
+│   ├── map_loader.py         # Chooses raster/grid/dxf mode
 │
-├── environment.py         # Graph environment & congestion modeling
-├── agent.py               # Agent logic, strategies, and decision-making
-├── simulation.py          # Core simulation engine & metric tracking
+├── analysis.py               # Metrics, bottlenecks, overlays
+├── scenarios.py              # Scenario presets
+├── visualization.py          # Live visualization + overlays
 │
-├── visualization.py       # 2D visualization & overlays
-├── analysis.py            # Metrics plots & evacuation KPIs
-│
-├── README.md
-├── CONTRIBUTING.md
-├── LICENSE
-└── CODE_OF_CONDUCT.md
+└── README.md                 # Documentation
 ```
 
 ---
 
-## Installation
-
-### Requirements
-- Python 3.9+
-- numpy
-- matplotlib
-- networkx
+## 🛠 Requirements
 
 Install dependencies:
 ```bash
-pip install numpy matplotlib networkx
+pip install -r requirements.txt
 ```
 
----
-
-## Running the Simulation (main.py)
-
-`main.py` is used for **interactive runs with visualization**.
-
-### Basic run
+DXF support:
 ```bash
-python main.py
+pip install ezdxf
 ```
 
-This will:
-1. Load default configuration
-2. Initialize the environment and agents
-3. Run the simulation step-by-step
-4. Display live 2D visualization
-5. Show plots and metrics at the end
-
-### Choosing a Scenario
-
-Edit `main.py` or `scenarios.py`:
-```python
-SCENARIO_NAME = "normal"
-# options: normal, high_density, blocked, evacuation
-```
-
-This changes:
-- Number of agents
-- Dynamic obstacles
-- Exit configuration
-- Evaluation behavior
-
----
-
-## Running Experiments (experiment.py)
-
-`experiment.py` runs **multiple simulations automatically** to produce stable, averaged results.
-
-### Example
+Image processing:
 ```bash
-python experiment.py normal 5
-```
-
-This means:
-- Scenario: `normal`
-- Runs: `5`
-- Output: mean ± standard deviation of all metrics
-
-### Output Includes
-- Average travel time
-- Average waits and replans
-- Collision counts
-- Exit success rate
-- Congestion peaks
-- Evacuation times (if applicable)
-
-This is the **recommended mode for evaluation and report results**.
-
----
-
-## Agent Navigation Strategies (AI Comparison)
-
-Configured in `config.py`:
-
-```python
-NAV_STRATEGY_MODE = "mixed"
-# options: shortest, congestion, safe, mixed
-```
-
-### Strategies
-
-- **shortest**  
-  Ignores congestion. Always uses geometric shortest path.
-
-- **congestion**  
-  Uses dynamic edge weights based on crowd density.
-
-- **safe**  
-  Aggressively avoids dense areas, even if path is longer.
-
-- **mixed**  
-  Mix of all strategies using proportions:
-```python
-NAV_STRATEGY_MIX = {
-    "shortest": 0.34,
-    "congestion": 0.33,
-    "safe": 0.33,
-}
+pip install pillow
 ```
 
 ---
 
-## Scenarios Explained
+## 🧪 Testing Example
 
-### Normal
-- Medium number of agents
-- No dynamic obstacles
-- Used as baseline
+### PNG Floorplan
+```bash
+MAP_MODE="raster"
+MAP_FILE="maps/examples/floor.png"
 
-### High Density
-- Large number of agents (stress test)
-- Same environment
-- Highlights congestion behavior
+python main.py visual floorplan_image_normal
+```
 
-### Blocked Paths
-- Nodes/edges get blocked during runtime
-- Forces rerouting and replanning
+### DXF Floorplan
+```bash
+MAP_MODE="dxf"
+MAP_FILE="maps/examples/mall.dxf"
 
-### Emergency Evacuation
-- Exits enabled
-- All agents aim for nearest exit
-- Measures evacuation time and bottlenecks
+python main.py visual floorplan_dxf_evac
+```
 
 ---
 
-## Dynamic Time Model
+## 📊 Outputs
 
-Movement time is **not constant**.
-
-- Each edge has:
-  - `distance`
-  - `max_capacity`
-  - `dynamic weight`
-- Agents move slower on congested or long edges
-- Traversal time increases naturally without physics simulation
-
-This creates realistic delays in bottleneck areas.
-
----
-
-## Metrics Collected
-
-### Per-Agent Metrics
-- Steps taken
-- Wait steps
-- Replans
-- Collisions
-- Exit reached (yes/no)
-- Exit time
-- Path optimality vs ideal shortest path
-
-### Global Metrics
-- Average travel time
-- Exit rate
-- Total collisions
-- Max density over time
+- Density heatmaps
+- Bottleneck overlays
 - Evacuation KPIs (50%, 80%, 90%)
-
-### Strategy-wise Metrics
-- Average steps per strategy
-- Average waits and replans
-- Collision comparisons
-
-Plots are generated automatically via `analysis.py`.
+- CSV bottleneck coordinate mapping
+- JSON serialized trial data
 
 ---
 
-## Visualization Output
+## 📘 Future Work
 
-- Nodes and edges (graph)
-- Agents as colored circles
-- Exit nodes (green)
-- Blocked nodes (red)
-- Density heatmap overlay
-- Strategy and type-based coloring
-
-Outputs suitable for:
-- Live demo
-- Screenshots for report
-- Result interpretation
+- 3D multi-level support
+- Fire propagation / hazard modelling
+- Calibration with real-world evacuation videos
+- Multi-floor connectivity (stairs / elevators)
 
 ---
 
-## Configuration: What You Can Change
-
-All tunable parameters live in `config.py`, including:
-- Number of agents
-- Max simulation steps
-- Agent speed
-- Perception radius
-- Congestion thresholds
-- Dynamic obstacle frequency
-- Exit toggling
-- Strategy mix
-- Scenario flags
-
-You are encouraged to modify these to study different behaviors.
+## 🤝 Contributions
+Feel free to modify scenarios, add new loaders, or upgrade the visual overlays.
 
 ---
 
-## Academic Use & Evaluation
-
-This project is designed for:
-- Final-year project submission
-- Research experimentation
-- AI strategy evaluation
-- Crowd and evacuation studies
-
-It supports reproducible experiments and quantitative comparison — not just visualization.
-
----
-
-## Documentation & Contribution
-
-- See `CONTRIBUTING.md` for contribution rules
-- See `CODE_OF_CONDUCT.md` for community standards
-- Licensed under the MIT License (see `LICENSE`)
-
----
-
-## Acknowledgment
-
-This project builds upon standard concepts in:
-- Graph algorithms (Dijkstra / A*)
-- Multi-agent systems
-- Crowd simulation research
-
-All implementation and experimentation logic is original unless otherwise stated.
+## 📝 License
+MIT License unless changed by your institution.

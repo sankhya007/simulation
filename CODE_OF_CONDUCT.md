@@ -1,123 +1,185 @@
-# Code of Conduct
 
-## 1. Purpose
+## 👋 Introduction
 
-This project is developed as an academic and research-oriented system for studying crowd simulation and agent-based artificial intelligence.  
-The purpose of this Code of Conduct is to ensure a respectful, inclusive, and professional environment for all contributors, users, and reviewers.
+Welcome to the **Crowd Simulation Project**.  
+This project supports research, education, and engineering around evacuation modeling and intelligent crowd movement.  
+To maintain a safe, collaborative, and professional community, all contributors and users must follow this **Code of Conduct**.
 
-Participation in this project should be free from harassment, discrimination, or hostility of any kind. We value constructive collaboration, academic integrity, and responsible conduct.
+This document ensures:
 
----
+- Respectful communication  
+- Safe collaboration  
+- Inclusivity  
+- Professional behaviour  
+- Clear rules for conflict resolution  
 
-## 2. Scope
-
-This Code of Conduct applies to all project-related spaces, including but not limited to:
-
-- GitHub repositories, issues, discussions, and pull requests
-- Project documentation and code reviews
-- Academic use such as coursework, theses, dissertations, and demonstrations
-- Any communication related to this project (online or offline)
-
-This Code applies whether participation occurs as a developer, contributor, reviewer, or user of the software.
+By participating, you agree to uphold these standards.
 
 ---
 
-## 3. Expected Behavior
+# 🧑‍🤝‍🧑 Our Pledge
 
-All participants are expected to adhere to the following standards:
+We pledge to make participation in this project:
 
-### ✅ Be Respectful
-- Treat others with courtesy, dignity, and professionalism.
-- Respect differing viewpoints, backgrounds, and levels of experience.
-- Use welcoming and inclusive language.
+- **Open**
+- **Harassment-free**
+- **Safe**
+- **Constructive**
 
-### ✅ Be Constructive
-- Provide feedback that is specific, actionable, and respectful.
-- Focus discussions on ideas, research quality, and technical merit.
-- Be open to constructive criticism and alternative solutions.
+Regardless of:
 
-### ✅ Maintain Academic Integrity
-- Clearly acknowledge sources, prior work, and citations.
-- Do not plagiarize or misrepresent authorship.
-- Ensure experimental results are reported honestly and reproducibly.
+- Age
+- Body size
+- Disability
+- Ethnicity
+- Gender identity and expression
+- Level of experience
+- Nationality
+- Personal appearance
+- Race
+- Religion
+- Sexual identity/orientation
+- Technical background  
 
-### ✅ Collaborate Professionally
-- Keep discussions technical and relevant to the project.
-- Use evidence-based arguments when discussing design or results.
-- Act in good faith to improve the project.
-
----
-
-## 4. Unacceptable Behavior
-
-The following behaviors are considered unacceptable and will not be tolerated:
-
-- Harassment, discrimination, or hate speech of any form
-- Personal attacks, insults, or derogatory comments
-- Bullying, intimidation, or threatening behavior
-- Deliberate disruption of discussions or development
-- Sharing private information without consent
-- Academic misconduct such as plagiarism or falsification of results
-- Repeatedly ignoring review feedback or contributing in bad faith
+We commit to a space where **everyone is welcome**.
 
 ---
 
-## 5. Reporting Issues
+# 🧭 Our Standards
 
-If you experience or witness behavior that violates this Code of Conduct, please report it responsibly.
+## 👍 Behaviours That Create a Positive Environment
 
-Reports may include:
-- Description of the incident
-- Relevant links, screenshots, or context
-- Date and approximate time of occurrence
+- Being respectful and kind  
+- Offering constructive feedback  
+- Showing empathy to others  
+- Welcoming new contributors  
+- Sharing knowledge freely  
+- Demonstrating patience  
+- Helping others troubleshoot code  
+- Valuing diverse perspectives  
 
-All reports will be:
-- Taken seriously
-- Reviewed confidentially
-- Handled without retaliation
+## 👎 Unacceptable Behaviours
 
----
+The following behaviour is strictly prohibited:
 
-## 6. Enforcement
+- Harassment or discrimination  
+- Personal attacks  
+- Doxxing or sharing private information  
+- Using demeaning or insulting language  
+- Dismissing others’ work without explanation  
+- Sexualized language or imagery  
+- Trolling or hostility  
+- Unsolicited direct messaging  
+- Intentionally derailing conversations  
+- Sabotaging project work  
 
-Project maintainers are responsible for upholding this Code of Conduct.
-
-They may take appropriate action in response to violations, including but not limited to:
-- Issuing a warning
-- Requesting changes or apologies
-- Temporarily restricting participation
-- Removing content or contributions
-- Banning individuals from the project space
-
-The severity and frequency of the behavior will be considered when determining enforcement actions.
-
----
-
-## 7. Academic Use & Responsibility
-
-This project may be used for academic purposes such as:
-- Final year projects
-- Research experiments
-- Coursework demonstrations
-
-Users and contributors are expected to:
-- Properly cite the project when used in academic submissions
-- Clearly distinguish original contributions from reused code
-- Avoid direct submission of this project as their own work
-
-Misuse of this project for academic dishonesty violates both this Code and general academic standards.
+If in doubt, **be respectful**.
 
 ---
 
-## 8. Amendments
+# 🛠 Responsibilities of Maintainers
 
-This Code of Conduct may be revised when necessary to reflect the evolving nature of the project or community.  
-Any major changes will be documented clearly in the repository.
+Project maintainers **must**:
+
+- Enforce this Code of Conduct  
+- Remove inappropriate comments, commits, or issues  
+- Ban users who repeatedly violate rules  
+- Promote a welcoming and inclusive community  
+
+They have the right to:
+
+- Block contributors violating guidelines  
+- Reject code that undermines project integrity  
+- Edit or remove harmful discussions  
+
+Maintainers must act **fairly and consistently**.
 
 ---
 
-## 9. Acknowledgment
+# 📣 Reporting Issues
 
-By contributing to or using this project, you agree to adhere to this Code of Conduct and to act in a manner that supports an open, ethical, and inclusive academic community.
+If you witness or experience harassment or unacceptable behaviour:
 
-This Code of Conduct was inspired by best practices in open-source and academic research communities.
+### Report it confidentially to:
+📧 **maintainer@example.com**  
+*(Replace with your actual project email)*
+
+Reports should include:
+
+- Description of the violation  
+- Links/screenshots  
+- Names of involved parties  
+- Your preferred method of follow-up  
+
+All reports will be kept **fully confidential**.  
+Retaliation against reporters is strictly prohibited.
+
+---
+
+# 🧾 Enforcement Guidelines
+
+Maintainers will use the **severity ladder** below:
+
+### 1️⃣ **Warning**
+For minor or first-time violations.  
+Example: rude comment.
+
+### 2️⃣ **Temporary Ban**
+Repeated or serious violations.  
+User is blocked for a cooling-off period.
+
+### 3️⃣ **Permanent Ban**
+For harassment, hate speech, threats, or repeated hostility.
+
+### 4️⃣ **Content Removal**
+Posts, commits, or discussions violating rules will be removed.
+
+### 5️⃣ **Issue Locking**
+If discussions escalate, maintainers may lock threads.
+
+---
+
+# 🌟 Scope
+
+This Code of Conduct applies to:
+
+- GitHub issues & pull requests  
+- Project Discord / Team chats  
+- Live meetings or calls  
+- Private messages between contributors  
+- Any interaction related to this project  
+
+---
+
+# 🌈 Inclusivity & Accessibility
+
+We aim to:
+
+- Use simple, inclusive language  
+- Provide accessible documentation  
+- Encourage participation from underrepresented groups  
+- Support beginners in simulation, Python, CAD, and AI  
+
+Everyone deserves a chance to learn and contribute.
+
+---
+
+# 🤝 Acknowledgments
+
+This Code of Conduct is adapted and expanded from:
+
+- Contributor Covenant v2.1  
+- NumFOCUS guidelines  
+- CNCF Code of Conduct  
+
+We thank the global open-source community for setting positive standards.
+
+---
+
+# 🏁 Final Note
+
+This project exists for **education**, **research**, and **innovation**.  
+Let’s create a community where collaboration thrives, ideas grow, and people feel safe contributing.
+
+Thank you for being part of the project ❤️  
+"""

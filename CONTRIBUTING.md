@@ -1,184 +1,185 @@
-# Contributing Guidelines
+# Contributing to the Crowd Simulation Project  
+A clear, beginner‑friendly guide for contributing to the system.
 
-Thank you for your interest in contributing to the **Graph-Based Crowd Simulation with Agent AI** project.
+Thank you for your interest in contributing!  
+Whether you’re fixing bugs, improving the simulation engine, adding new map loaders, or helping with documentation, **all contributions are welcome**.
 
-This repository is primarily developed for **academic, research, and educational purposes**. Contributions are welcome as long as they maintain code quality, reproducibility, and academic integrity.
-
----
-
-## 1. Who Can Contribute
-
-Contributions are welcome from:
-- Students and researchers
-- Contributors interested in crowd simulation and multi-agent systems
-- Developers improving performance, robustness, or documentation
-
-Both code and non-code contributions (documentation, experiments, diagrams) are equally valuable.
+This guide explains **how to contribute**, **coding standards**, and **the workflow** used in this project.
 
 ---
 
-## 2. Types of Contributions
+# 🌱 Ways You Can Contribute
 
-You may contribute in the following ways:
+### 🐛 1. Report Bugs
+If something doesn’t work as expected:
+- Open a GitHub issue
+- Include logs, screenshots, and steps to reproduce
 
-### Code Contributions
-- Bug fixes
-- Performance optimizations
-- New agent behaviors or navigation strategies
-- New scenarios or experimental setups
-- Improvements to metrics, analysis, or visualization
+### 🧠 2. Suggest Enhancements
+Ideas for:
+- Better visualization
+- Faster simulation
+- Improved agents
+- CAD/image processing upgrades
+- New scenarios
 
-### Research & Experimentation
-- Additional evaluation metrics
-- Scenario comparisons
-- Sensitivity or ablation studies
-- Documentation of experimental results
+### 🧪 3. Add Features
+Good first features:
+- Better bottle‑neck detection algorithms
+- More evacuation metrics
+- Additional raster or DXF formats
+- Multi‑floor support (stairs, elevators)
+- Exporting result videos
 
-### Documentation
-- Improving README clarity
-- Adding diagrams or explanations
-- Writing usage examples or tutorials
+### ✍️ 4. Improve Documentation
+You can help by improving:
+- README.md
+- DEMO.md
+- tutorials
+- inline code comments
+
+### 🎨 5. Provide Better Demo Maps
+Provide:
+- Clean PNG mall layouts  
+- DXF files with proper WALL/EXIT layers  
+- Classroom, auditorium, campus maps  
 
 ---
 
-## 3. Contribution Workflow
+# 🔧 Project Structure (Important!)
 
-### Step 1: Fork the Repository
-Create your own fork of the repository on GitHub.
-
-### Step 2: Create a Feature Branch
-```bash
-git checkout -b feature/short-description
+```
+crowd/
+│── main.py                    # CLI, batch runner, visual runner
+│── simulation.py              # Agent engine + timestep loop
+│── environment.py             # Grid/graph building
+│── agent.py                   # Agent behavior logic
+│── maps/
+│     ├── raster_loader.py     # PNG/JPG → grid
+│     ├── dxf_loader.py        # DXF → grid
+│     ├── map_loader.py        # Routing for map modes
+│── analysis.py                # Metrics, KPIs, bottlenecks, overlays
+│── scenarios.py               # Scenario presets (normal, high_density, etc.)
+│── visualization.py           # Live animation + overlays
+│── README.md / DEMO.md        # Docs for users
 ```
 
-Use descriptive branch names such as:
-- `feature/safe-navigation-strategy`
-- `fix/congestion-weight-bug`
-- `docs/architecture-diagram`
-
-### Step 3: Make Your Changes
-- Keep commits focused and minimal
-- Do not mix unrelated changes in a single commit
-- Write clean, readable, well-documented code
-
 ---
 
-## 4. Commit with Clear Messages
+# 🧵 Workflow for Contributing
 
-Use clear and descriptive commit messages.
+## 1️⃣ Fork the Repository
+```
+Click "Fork" on GitHub
+```
+
+## 2️⃣ Clone Your Fork
+```bash
+git clone https://github.com/yourname/crowd-simulation.git
+cd crowd-simulation
+```
+
+## 3️⃣ Create a Branch
+```bash
+git checkout -b feature/my-new-feature
+```
 
 Examples:
-```text
-feat(agent): add safe navigation strategy
-fix(simulation): prevent deadlock at blocked exits
-docs(readme): add evaluation methodology section
+```
+feature/add-dxf-overlay
+fix/raster-threshold
+docs/improve-readme
 ```
 
----
+## 4️⃣ Make Your Changes
+Follow coding standards below.
 
-## 5. Open a Pull Request
+## 5️⃣ Run Tests
+- Basic simulation (`normal`)
+- Raster loader test
+- DXF loader test
+- Evacuation scenario
+- Batch runs (if modified)
 
-When opening a Pull Request (PR), include:
-- A brief summary of changes
-- Motivation and expected impact
-- Any new configuration options
-- Screenshots or plots (if applicable)
-
----
-
-## 6. Coding Standards
-
-### General Guidelines
-- Follow **PEP 8** style conventions
-- Use meaningful variable and function names
-- Favor readability over micro-optimizations
-
-### Configuration Management
-- Do not hardcode constants
-- All tunable parameters must live in `config.py`
-- Scenario logic belongs in `scenarios.py`
-
-### Module Responsibilities
-- `agent.py` → agent logic & behavior
-- `environment.py` → graph & congestion modeling
-- `simulation.py` → time-step loop & metrics
-- `analysis.py` → metrics computation & plotting
-- `visualization.py` → rendering & overlays
-
-Avoid cross-cutting logic across unrelated modules.
-
----
-
-## 7. Adding New Features
-
-### Adding a New Navigation Strategy
-- Extend behavior in `agent.py`
-- Register the strategy name in `config.py`
-- Ensure it appears in per-strategy metrics
-- Add at least one comparison plot
-
-### Adding a New Scenario
-- Define the scenario in `scenarios.py`
-- Clearly describe expected behavior
-- Test with `experiment.py`
-- Document metrics affected by the scenario
-
----
-
-## 8. Testing & Verification
-
-Before submitting contributions, run:
-
+## 6️⃣ Commit
 ```bash
-python main.py
-python experiment.py normal 3
+git add .
+git commit -m "Add new DXF overlay rendering"
 ```
 
-Ensure that:
-- The simulation runs without errors
-- Plots and metrics are sensible
-- No import or runtime issues exist
+## 7️⃣ Push & Create Pull Request
+```bash
+git push origin feature/my-new-feature
+```
+
+Submit a Pull Request describing:
+- What you added
+- Why it is useful
+- How to test
 
 ---
 
-## 9. Documentation Requirements
+# 🧩 Coding Guidelines
 
-If your contribution changes behavior or results:
-- Update the relevant documentation
-- Explain why the change was made
-- Mention any assumptions or limitations
+### ✔ Python Style
+- Follow **PEP‑8**
+- Use **type hints** everywhere
+- Keep functions short and readable
+- Comment tricky algorithms (DXF geometry, heatmaps, etc.)
 
-Code without documentation may be requested to be revised.
+### ✔ Simulation Components
+- Do not hard‑code dimensions; always use config values
+- Keep loaders pure (NO side effects)
+- Avoid heavy work in visualization loop
+- Ensure new scenarios integrate through `scenarios.py`
 
----
-
-## 10. Academic Integrity & Ethics
-
-This project follows strict academic standards.
-
-Contributors must:
-- Avoid plagiarized code
-- Properly acknowledge external ideas or algorithms
-- Avoid falsifying or selectively reporting results
-- Make experiments reproducible wherever possible
-
-Violations of academic integrity may result in removal of contributions.
+### ✔ DXF / Raster Processing
+- Keep thresholds in `config.py`
+- Test on several maps
+- Use metadata for accurate overlays
 
 ---
 
-## 11. Communication & Conduct
+# 📦 Pull Request Requirements
 
-All contributors must follow the project’s **Code of Conduct**.
-
-Be respectful, constructive, and professional in all discussions.
+Your PR should include:
+- Description of changes
+- Before/after behavior if visual
+- Performance impact (if any)
+- Updated docs if feature changes UX
 
 ---
 
-## 12. Final Notes
+# 🤖 Good First Issues
 
-By contributing to this project, you agree that:
-- Your contributions may be reviewed and modified
-- Your code may be used for academic and educational purposes
-- You are contributing in good faith to improve research quality
+New contributors can work on:
+- Improving wall/door detection for PNG maps
+- Adding new map overlays
+- Optimizing crowded simulations
+- Adding evacuation KPIs
+- Creating map preview mode
+- Improving scenario presets
 
-We appreciate all thoughtful contributions that help improve this project.
+---
+
+# 🙏 Contributor Expectations
+
+- Be kind and respectful  
+- Follow the Code of Conduct  
+- Help reviewers understand your changes  
+- Be patient with review cycles  
+
+---
+
+# 💬 Need Help?
+
+Open a GitHub issue or start a discussion—maintainers and contributors will help.
+
+---
+
+# ❤️ Thank You
+
+Your contributions help build a powerful **research‑grade** crowd simulation engine that supports PNG/DXF maps, evacuation analytics, and bottleneck detection.
+
+We’re glad to have you here!
+
