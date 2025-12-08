@@ -1,23 +1,23 @@
-# 1. Normal scenario with visualization
+# 1. Normal navigation, visual demo
 python main.py normal
 
-# 2. High-density stress test (many agents)
+# 2. High-density stress test (lots of agents, same map)
 python main.py high_density
 
-# 3. Blocked paths / dynamic obstacles scenario
+# 3. Blocked paths scenario (dynamic obstacles, rerouting)
 python main.py blocked
 
-# 4. Emergency evacuation scenario (shows exits + bottlenecks + KPIs)
+# 4. Emergency evacuation scenario (border exits, EVACUATION_MODE)
 python main.py evacuation
 
-# 5. Batch experiment on normal scenario (5 runs, averaged stats)
+
+### experiments, no gui, just metrics
+
+# 5. Baseline experiment: normal scenario, 5 runs (aggregated metrics)
 python experiment.py normal 5
 
-# 6. Batch experiment on evacuation scenario (5 runs, evacuation KPIs)
+# 6. Evacuation experiment: evacuation scenario, 5 runs
 python experiment.py evacuation 5
 
-# 7. AI strategy comparison on normal scenario (3 runs per strategy)
-python experiment.py compare_strategies normal 3
-
-# 8. AI strategy comparison on evacuation scenario
-python experiment.py compare_strategies evacuation 3
+# 7. AI strategy comparison on evacuation scenario
+python experiment.py compare evacuation 5
