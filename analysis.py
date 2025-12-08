@@ -1,24 +1,15 @@
 # analysis.py
 
-import math
-from typing import Dict, List, Tuple, Optional
-
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 
 from simulation import CrowdSimulation
 
 
-Node = Tuple[int, int]
-
-
-# ---------- Basic plots ----------
-
 def plot_travel_time_histogram(sim: CrowdSimulation):
     """
     Plot distribution of per-agent travel effort (steps_taken).
-
-    In evacuation scenarios, you can adapt this to use exit_time_step instead.
+    In evacuation scenarios you can modify this to use exit_time_step instead.
     """
     steps = [a.steps_taken for a in sim.agents]
 
@@ -59,147 +50,89 @@ def plot_max_density_over_time(sim: CrowdSimulation):
     plt.show()
 
 
-# ---------- Evacuation KPIs & bottlenecks ----------
-
-def compute_evacuation_metrics(
-    sim: CrowdSimulation,
-    top_k_bottlenecks: int = 5,
-    print_report: bool = True,
-) -> Dict:
+def plot_metrics_by_agent_type(sim: CrowdSimulation):
     """
-    Compute evacuation KPIs:
-      - time to evacuate 50%, 80%, 90% of agents
-      - how many agents reached an exit
-      - top-K bottleneck nodes (highest cumulative density)
+    Compare average steps, waits, and replans per agent type.
 
-    Returns a dict with all metrics. If print_report is True, prints nicely.
+    Great for showing how leaders/followers/normals/panic behave differently.
     """
-    agents = sim.agents
-    n_agents = len(agents)
+    summary = sim.get_metrics_summary()
+    by_type = summary["by_type"]
 
-    # --- exit times array ---
-    exit_times: List[int] = [
-        a.exit_time_step for a in agents if a.exit_time_step is not None
-    ]
-    exit_times_sorted = sorted(exit_times)
+    if not by_type:
+        return
 
-    def percentile_time(p: float) -> Optional[int]:
-        """
-        p in (0,1]. Returns time when p fraction of agents have exited,
-        or None if not enough agents exited.
-        """
-        if not exit_times_sorted:
-            return None
-        k = math.ceil(p * n_agents)
-        if k == 0:
-            return None
-        # if fewer agents exited than k, return None
-        if len(exit_times_sorted) < k:
-            return None
-        return exit_times_sorted[k - 1]
+    types = sorted(by_type.keys())
+    avg_steps = [by_type[t]["avg_steps"] for t in types]
+    avg_waits = [by_type[t]["avg_waits"] for t in types]
+    avg_replans = [by_type[t]["avg_replans"] for t in types]
 
-    t50 = percentile_time(0.5)
-    t80 = percentile_time(0.8)
-    t90 = percentile_time(0.9)
+    x = np.arange(len(types))
+    width = 0.25
 
-    # --- bottleneck detection (top-K nodes by density) ---
-    density = sim.get_density_matrix()  # shape (H, W)
-    flat = density.flatten()
-    if top_k_bottlenecks > 0:
-        top_indices = np.argsort(flat)[::-1]  # descending
-        bottlenecks: List[Dict] = []
-        h, w = density.shape
-        count = 0
-        for idx in top_indices:
-            val = flat[idx]
-            if val <= 0:
-                break
-            y = idx // w
-            x = idx % w
-            bottlenecks.append({"node": (x, y), "visits": int(val)})
-            count += 1
-            if count >= top_k_bottlenecks:
-                break
-    else:
-        bottlenecks = []
+    plt.figure(figsize=(7, 4))
+    plt.bar(x - width, avg_steps, width=width, label="Steps")
+    plt.bar(x, avg_waits, width=width, label="Waits")
+    plt.bar(x + width, avg_replans, width=width, label="Replans")
 
-    evac_metrics = {
-        "n_agents": n_agents,
-        "n_exited": len(exit_times),
-        "exit_fraction": len(exit_times) / n_agents if n_agents > 0 else 0.0,
-        "t50": t50,
-        "t80": t80,
-        "t90": t90,
-        "bottlenecks": bottlenecks,
-    }
-
-    if print_report:
-        print("\n=== Evacuation KPIs ===")
-        print(f"Agents evacuated      : {evac_metrics['n_exited']}/{evac_metrics['n_agents']}")
-        print(f"Evacuation fraction   : {evac_metrics['exit_fraction']:.2f}")
-        print(
-            f"Time to 50% evacuated : {t50 if t50 is not None else 'N/A'}"
-        )
-        print(
-            f"Time to 80% evacuated : {t80 if t80 is not None else 'N/A'}"
-        )
-        print(
-            f"Time to 90% evacuated : {t90 if t90 is not None else 'N/A'}"
-        )
-
-        if bottlenecks:
-            print("\nTop bottleneck nodes (by cumulative visits):")
-            for i, b in enumerate(bottlenecks, start=1):
-                print(f"  {i}. node={b['node']}  visits={b['visits']}")
-        else:
-            print("\nNo bottlenecks detected (no high-density nodes).")
-
-    return evac_metrics
-
-
-def show_bottlenecks_on_heatmap(sim: CrowdSimulation, top_k: int = 5):
-    """
-    Optional visualization helper:
-    - Shows cumulative density heatmap
-    - Highlights top-K bottleneck nodes
-    """
-    density = sim.get_density_matrix()
-    h, w = density.shape
-
-    # reuse bottleneck logic
-    flat = density.flatten()
-    top_indices = np.argsort(flat)[::-1]
-    xs, ys = [], []
-    vals = []
-    count = 0
-    for idx in top_indices:
-        val = flat[idx]
-        if val <= 0:
-            break
-        y = idx // w
-        x = idx % w
-        xs.append(x)
-        ys.append(y)
-        vals.append(val)
-        count += 1
-        if count >= top_k:
-            break
-
-    plt.figure(figsize=(6, 4))
-    plt.imshow(density, origin="lower", interpolation="nearest", cmap="Reds")
-    plt.colorbar(label="Visit count")
-    plt.title("Evacuation Bottlenecks (Top-K Nodes)")
-    plt.xlabel("X")
-    plt.ylabel("Y")
-
-    if xs:
-        plt.scatter(xs, ys, s=80, facecolors="none", edgecolors="cyan", linewidths=2)
-        for (x, y, v) in zip(xs, ys, vals):
-            plt.text(x + 0.1, y + 0.1, str(v), color="cyan", fontsize=8)
-
+    plt.xticks(x, types)
+    plt.xlabel("Agent type")
+    plt.ylabel("Average count")
+    plt.title("Per-agent-type Behaviour Comparison")
+    plt.legend()
     plt.tight_layout()
 
     # Optional: save for report
-    # plt.savefig("evacuation_bottlenecks.png", dpi=200)
+    # plt.savefig("metrics_by_agent_type.png", dpi=200)
 
     plt.show()
+
+
+def compute_evacuation_kpis(sim: CrowdSimulation):
+    """
+    Compute evacuation KPIs for scenarios where EVACUATION_MODE is True.
+    Returns a dict with times to evacuate 50%, 80%, 90% of agents (if possible).
+    """
+    exit_times = [
+        a.exit_time_step for a in sim.agents if a.exit_time_step is not None
+    ]
+    n = len(sim.agents)
+
+    if not exit_times or n == 0:
+        return {
+            "t_50": None,
+            "t_80": None,
+            "t_90": None,
+        }
+
+    exit_times_sorted = sorted(exit_times)
+    def percentile_time(p: float):
+        k = int(np.ceil(p * n) - 1)
+        if k < 0 or k >= len(exit_times_sorted):
+            return None
+        return exit_times_sorted[k]
+
+    return {
+        "t_50": percentile_time(0.5),
+        "t_80": percentile_time(0.8),
+        "t_90": percentile_time(0.9),
+    }
+
+
+def print_evacuation_report(sim: CrowdSimulation):
+    """
+    Print a small text report for evacuation scenarios using the KPIs above.
+    """
+    kpis = compute_evacuation_kpis(sim)
+
+    print("\n=== Evacuation KPIs ===")
+    if all(v is None for v in kpis.values()):
+        print("No agents reached an exit or evacuation mode not active.")
+        return
+
+    def fmt(t):
+        return "N/A" if t is None else f"{t}"
+
+    print(f"Time to evacuate 50% of agents: {fmt(kpis['t_50'])}")
+    print(f"Time to evacuate 80% of agents: {fmt(kpis['t_80'])}")
+    print(f"Time to evacuate 90% of agents: {fmt(kpis['t_90'])}")
