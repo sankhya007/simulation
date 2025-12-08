@@ -21,6 +21,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
+# correct import
+from maps.map_loader import load_mapmeta_from_config
+
 # Project imports
 from scenarios import SCENARIO_PRESETS, load_and_apply_scenario, configure_environment_for_active_scenario
 from visualization import run_visual_simulation, show_density_heatmap
@@ -29,10 +32,14 @@ from simulation import CrowdSimulation
 import config
 
 # analysis helpers: try to import compute_bottlenecks from analysis; fall back if missing
+# analysis helpers
 try:
     from analysis import compute_bottlenecks
 except Exception:
     compute_bottlenecks = None
+
+mm = load_mapmeta_from_config()
+layout = mm.layout
 
 
 def list_scenarios():
@@ -158,6 +165,13 @@ def _run_single_trial(scenario_name: str, agents: Optional[int], steps: Optional
     }
     return summary
 
+grid_w, grid_h = mm.grid_shape
+env = EnvironmentGraph(
+    width=grid_w,
+    height=grid_h,
+    layout_matrix=layout,
+    mapmeta=mm
+)
 
 def run_batch(scenario_name: str, trials: int = 5, workers: int = 2, agents: int = None, steps: int = None, target_percent: float = None, out_dir: str = "out", overlay: bool = False):
     out_dir_p = Path(out_dir)

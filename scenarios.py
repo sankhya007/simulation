@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional, Tuple
 import config
 from maps import load_layout_matrix_from_config
 from environment import EnvironmentGraph
+from maps.map_loader import load_mapmeta_from_config
 
 # Simple scenario presets. Each entry contains optional hooks / params that will be
 # applied to the EnvironmentGraph instance by configure_environment_for_scenario.
@@ -69,44 +70,51 @@ def configure_environment_for_scenario(name: str, env: EnvironmentGraph, **overr
     env.scenario_name = name  # store name for downstream code / logging
 
 
-def configure_environment_for_active_scenario(env: EnvironmentGraph) -> None:
+def configure_environment_for_active_scenario(env, preset):
     """
-    Convenience wrapper used in other modules: apply the scenario currently stored on env,
-    or fallback to DEFAULT_SCENARIO_NAME.
+    Apply scenario settings to the environment.
     """
-    name = getattr(env, "scenario_name", None) or config.DEFAULT_SCENARIO_NAME
-    configure_environment_for_scenario(name, env)
+    # Example (adjust based on your preset structure)
+    if "evacuation_mode" in preset:
+        config.EVACUATION_MODE = preset["evacuation_mode"]
+
+    if "agents" in preset:
+        config.NUM_AGENTS = preset["agents"]
+
+    if "blocked_nodes" in preset:
+        for n in preset["blocked_nodes"]:
+            env.block_node(n)
+
+    if "exits" in preset:
+        for n in preset["exits"]:
+            env.mark_exit(n)
 
 
-def load_and_apply_scenario(name: str, **overrides) -> Tuple[EnvironmentGraph, Dict[str, Any]]:
+
+def load_and_apply_scenario(name: str):
     """
-    Build an EnvironmentGraph according to MAP_MODE (grid / raster / dxf) and apply scenario.
-    Returns (env, meta) where meta can contain map loader metadata (e.g., raster extents).
+    Loads MapMeta → builds EnvironmentGraph → applies scenario overrides.
+    Returns: (env, mapmeta)
     """
-    layout_or_tuple = load_layout_matrix_from_config()
+    if name not in SCENARIO_PRESETS:
+        raise ValueError(f"Unknown scenario '{name}'")
 
-    # Support two possible return types:
-    #  - layout (List[List[str]])
-    #  - (layout, meta) tuple if loader provides metadata
-    meta: Dict[str, Any] = {}
-    if isinstance(layout_or_tuple, tuple) and len(layout_or_tuple) == 2:
-        layout, meta = layout_or_tuple
-    else:
-        layout = layout_or_tuple
+    preset = SCENARIO_PRESETS[name]
 
-    if layout is None:
-        # synthetic grid
-        env = EnvironmentGraph(config.GRID_WIDTH, config.GRID_HEIGHT)
-    else:
-        # layout provided -> use the matrix to build the env
-        # Some EnvironmentGraph constructors expect width=0,height=0 when layout_matrix supplied
-        env = EnvironmentGraph(width=0, height=0, layout_matrix=layout)
+    # Always load mapmeta FIRST
+    mm = load_mapmeta_from_config()
+    layout = mm.layout
+    grid_w, grid_h = mm.grid_shape
 
-    # persist meta and scenario name to env for downstream use
-    env.map_meta = meta
-    env.scenario_name = name
+    # Build env using world coords
+    env = EnvironmentGraph(
+        width=grid_w,
+        height=grid_h,
+        layout_matrix=layout,
+        mapmeta=mm
+    )
 
-    # Apply scenario changes
-    configure_environment_for_scenario(name, env, **overrides)
+    # Apply scenario modifiers (speed, exits, density, evacuation, blocked nodes, etc.)
+    configure_environment_for_active_scenario(env, preset)
 
-    return env, meta
+    return env, mm

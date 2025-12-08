@@ -6,11 +6,16 @@ from typing import List, Sequence, Optional, Dict, Tuple
 import networkx as nx
 
 from config import EDGE_BASE_CAPACITY
+from maps.map_meta import MapMeta
+from typing import Optional
+from typing import Any
 
 
 Node = Tuple[int, int]
 LayoutMatrix = Sequence[Sequence[str]]
 
+# Removed stray undefined code: node/world coordinates should be set when nodes are created
+# (see _build_open_grid and _build_from_layout which set node "pos" attributes).
 
 class EnvironmentGraph:
     """
@@ -58,19 +63,26 @@ class EnvironmentGraph:
         width: int,
         height: int,
         layout_matrix: Optional[LayoutMatrix] = None,
+        mapmeta: Optional[MapMeta] = None,
     ):
         """
         If layout_matrix is None: build a fully open grid of size (width x height).
         If layout_matrix is provided: infer width/height from it and build from symbols.
+
+        New: optional mapmeta: when provided, node 'pos' attribute will be set from
+        mapmeta.transform(gx, gy) (world coordinates). If not provided, pos defaults
+        to (float(x), float(y)) as before.
         """
         self.graph = nx.Graph()
+        self._mapmeta = mapmeta  # store for possible later use
 
         if layout_matrix is None:
-            self.width = width
-            self.height = height
-            self._build_open_grid()
+            self.width = int(width)
+            self.height = int(height)
+            self._build_open_grid(mapmeta=mapmeta)
         else:
-            self._build_from_layout(layout_matrix)
+            # If layout provided, infer dimensions (preserve existing behaviour)
+            self._build_from_layout(layout_matrix, mapmeta=mapmeta)
 
     # ------------------------------------------------------------------
     # PUBLIC UTILITIES (NODES)
@@ -244,12 +256,23 @@ class EnvironmentGraph:
     # BUILDERS
     # ------------------------------------------------------------------
 
-    def _build_open_grid(self):
+    def _build_open_grid(self, mapmeta: Optional[MapMeta] = None):
+        """
+        Build a width x height open grid. If mapmeta is provided, use its transform
+        to compute node positions in world coordinates; otherwise use integer coords.
+        """
         for y in range(self.height):
             for x in range(self.width):
+                if mapmeta is not None:
+                    # mapmeta.transform expects grid indices (gx,gy) -> (real_x, real_y)
+                    wx, wy = mapmeta.transform(x, y)
+                    pos = (float(wx), float(wy))
+                else:
+                    pos = (float(x), float(y))
+
                 self.graph.add_node(
                     (x, y),
-                    pos=(float(x), float(y)),
+                    pos=pos,
                     accessibility="open",
                     type="corridor",
                 )
@@ -261,7 +284,11 @@ class EnvironmentGraph:
                 if y + 1 < self.height:
                     self._add_edge_with_defaults((x, y), (x, y + 1))
 
-    def _build_from_layout(self, layout_matrix: LayoutMatrix):
+    def _build_from_layout(self, layout_matrix: LayoutMatrix, mapmeta: Optional[MapMeta] = None):
+        """
+        Build graph from layout_matrix. If mapmeta provided, use it to compute world
+        pos for each node; otherwise fallback to grid coords.
+        """
         if not layout_matrix:
             raise ValueError("layout_matrix is empty")
 
@@ -289,9 +316,15 @@ class EnvironmentGraph:
                     accessibility = "open"
                     node_type = "corridor"
 
+                if mapmeta is not None:
+                    wx, wy = mapmeta.transform(x, y)
+                    pos = (float(wx), float(wy))
+                else:
+                    pos = (float(x), float(y))
+
                 self.graph.add_node(
                     (x, y),
-                    pos=(float(x), float(y)),
+                    pos=pos,
                     accessibility=accessibility,
                     type=node_type,
                 )
@@ -359,3 +392,131 @@ class EnvironmentGraph:
             key2 = (v, u)
             occ = occupancy_map.get(key1, occupancy_map.get(key2, 0))
             self.set_edge_dynamic_weight(u, v, occ)
+
+
+
+def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
+    """
+    Attach world coordinates (mapmeta.transform) to nodes in an existing environment object `env`.
+    This function is intentionally defensive — it tries a few common internal shapes:
+      - env.nodes: iterable of node objects
+      - env.graph.nodes(data=True) for networkx-like graphs
+      - env._nodes or env.nodes_list
+    For each node it tries to find grid coordinates in these common attribute/key names:
+      ('gx','gy'), ('grid_x','grid_y'), ('x_idx','y_idx'), ('i','j')
+    and then sets world coordinates on the node as attributes:
+      node.world_x, node.world_y
+    or on the node data dict if node is a dict: node['world_x'], node['world_y'].
+    """
+    if mapmeta is None:
+        return
+
+    def _set_world_on_obj(obj, gx, gy):
+        wx, wy = mapmeta.transform(int(gx), int(gy))
+        # try several attribute names
+        try:
+            setattr(obj, "world_x", wx)
+            setattr(obj, "world_y", wy)
+            return True
+        except Exception:
+            pass
+        # fallback attribute variants
+        for nx, ny in (("x_world", "y_world"), ("wx", "wy")):
+            try:
+                setattr(obj, nx, wx)
+                setattr(obj, ny, wy)
+                return True
+            except Exception:
+                pass
+        # if it's a dict-like object
+        try:
+            obj["world_x"] = wx
+            obj["world_y"] = wy
+            return True
+        except Exception:
+            pass
+        return False
+
+    def _get_grid_coords_from_obj(obj):
+        # Try attribute names for grid indices
+        for ax, ay in (("gx", "gy"), ("grid_x", "grid_y"), ("x_idx", "y_idx"), ("i", "j"), ("col", "row")):
+            gx = getattr(obj, ax, None)
+            gy = getattr(obj, ay, None)
+            if gx is not None and gy is not None:
+                return gx, gy
+        # Try dict keys
+        for kx, ky in (("gx", "gy"), ("grid_x", "grid_y"), ("x_idx", "y_idx"), ("i", "j"), ("col", "row")):
+            try:
+                if kx in obj and ky in obj:
+                    return obj[kx], obj[ky]
+            except Exception:
+                pass
+        return None
+
+    # 1) networkx-style env.graph.nodes(data=True)
+    try:
+        graph = getattr(env, "graph", None)
+        if graph is not None:
+            # networkx graph
+            try:
+                nodes_iter = graph.nodes(data=True)
+                for nid, data in nodes_iter:
+                    # data may contain grid coords
+                    coords = _get_grid_coords_from_obj(data) or _get_grid_coords_from_obj(data.get("attrs", {})) if isinstance(data, dict) else None
+                    if coords:
+                        gx, gy = coords
+                        # set on data dict
+                        data["world_x"], data["world_y"] = mapmeta.transform(int(gx), int(gy))
+                    else:
+                        # try to inspect node object if nodes store objects as values
+                        # some graphs store objects as data['obj']
+                        obj = data.get("obj") if isinstance(data, dict) and "obj" in data else None
+                        if obj:
+                            coords = _get_grid_coords_from_obj(obj)
+                            if coords:
+                                gx, gy = coords
+                                _set_world_on_obj(obj, gx, gy)
+                return
+            except Exception:
+                # not a networkx graph or unexpected structure — fall through
+                pass
+    except Exception:
+        pass
+
+    # 2) env.nodes as an iterable of node objects or dicts
+    nodes_iterable = None
+    for candidate in ("nodes", "_nodes", "nodes_list", "node_list"):
+        nodes_iterable = getattr(env, candidate, None)
+        if nodes_iterable is not None:
+            break
+
+    if nodes_iterable is None:
+        # 3) maybe env has a method to iterate nodes
+        if hasattr(env, "iter_nodes"):
+            nodes_iterable = env.iter_nodes()
+
+    if nodes_iterable is None:
+        # nothing we can do safely
+        return
+
+    # Iterate and assign world coords
+    try:
+        for node in nodes_iterable:
+            coords = _get_grid_coords_from_obj(node)
+            if coords:
+                gx, gy = coords
+                _set_world_on_obj(node, gx, gy)
+            else:
+                # sometimes node is a (gx,gy,obj) tuple
+                try:
+                    if isinstance(node, tuple) and len(node) >= 3:
+                        maybe_obj = node[2]
+                        coords = _get_grid_coords_from_obj(maybe_obj)
+                        if coords:
+                            gx, gy = coords
+                            _set_world_on_obj(maybe_obj, gx, gy)
+                except Exception:
+                    pass
+    except Exception:
+        # be tolerant: don't raise on unexpected structures
+        return

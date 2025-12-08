@@ -1,29 +1,27 @@
 """
 Global configuration for the crowd simulation project.
 
-All tunable knobs should live here so experiments are reproducible.
+All tunable knobs live here so experiments are reproducible.
 """
 
-# =========================
-# Core grid parameters
-# =========================
+# ============================================================
+# CORE GRID PARAMETERS (used when MAP_MODE = "grid")
+# ============================================================
 GRID_WIDTH = 15
 GRID_HEIGHT = 10
 
-# These may be overridden by scenarios.py
 NUM_AGENTS = 60
 MAX_STEPS = 400
-
 SEED = 42
 
-# =========================
-# Agent behaviour
-# =========================
-AGENT_REPLAN_PROB = 0.01        # prob. of random new goal in NON-evacuation mode
-COLLISION_DISTANCE = 0.25       # when two agents are "too close"
+# ============================================================
+# AGENT BEHAVIOUR
+# ============================================================
+AGENT_REPLAN_PROB = 0.01        # probability an agent picks a new random goal
+COLLISION_DISTANCE = 0.25       # "too close" for collision checks
 
-PERCEPTION_RADIUS = 3.0         # how far agents "see" others / leader / congestion
-GROUP_SIZE = 4                  # one leader + followers in a group
+PERCEPTION_RADIUS = 3.0
+GROUP_SIZE = 4                  # leader + followers
 
 AGENT_TYPE_SPEEDS = {
     "leader": 1.0,
@@ -32,17 +30,17 @@ AGENT_TYPE_SPEEDS = {
     "panic": 1.0,
 }
 
-DENSITY_THRESHOLD = 2           # node-level crowding threshold
-GLOBAL_DENSITY_REPLAN_THRESHOLD = 2.0   # avg agents per occupied node
+DENSITY_THRESHOLD = 2
+GLOBAL_DENSITY_REPLAN_THRESHOLD = 2.0
 
-# =========================
-# Edge / congestion model
-# =========================
-EDGE_BASE_CAPACITY = 5          # comfortable edge capacity for congestion
+# ============================================================
+# EDGE / CONGESTION MODEL
+# ============================================================
+EDGE_BASE_CAPACITY = 5          # comfortable edge capacity
 
-# =========================
-# Dynamic environment (blocked paths, exits)
-# =========================
+# ============================================================
+# DYNAMIC ENVIRONMENT
+# ============================================================
 DYNAMIC_BLOCKS_ENABLED = False
 BLOCK_NODE_EVERY_N_STEPS = 40
 BLOCK_NODE_PROB = 0.4
@@ -50,26 +48,16 @@ BLOCK_NODE_PROB = 0.4
 DYNAMIC_EXITS_ENABLED = False
 EXIT_TOGGLE_EVERY_N_STEPS = 80
 
-# =========================
-# Evacuation mode
-# =========================
-# When True:
-#  - Agents start with goal = nearest exit
-#  - They do NOT pick new random goals after reaching exits
+# ============================================================
+# EVACUATION MODE
+# ============================================================
 EVACUATION_MODE = False
-
-# Default scenario name for main.py if no arg given
 DEFAULT_SCENARIO_NAME = "normal"
 
-# =========================
-# AI navigation strategies
-# =========================
-# How agents choose to route:
-#   "shortest"   -> pure geometric distance (ignores congestion)
-#   "congestion" -> congestion-aware dynamic weights
-#   "safe"       -> avoids dense areas more aggressively
-#   "mixed"      -> mixture defined by NAV_STRATEGY_MIX
-NAV_STRATEGY_MODE = "mixed"   # "shortest" | "congestion" | "safe" | "mixed"
+# ============================================================
+# NAVIGATION STRATEGY
+# ============================================================
+NAV_STRATEGY_MODE = "mixed"  # "shortest", "congestion", "safe", "mixed"
 
 NAV_STRATEGY_MIX = {
     "shortest": 0.34,
@@ -77,70 +65,71 @@ NAV_STRATEGY_MIX = {
     "safe": 0.33,
 }
 
-# =========================
-# Map / floorplan selection
-# =========================
-# How we build the environment graph:
-#   "grid"   -> simple grid of size GRID_WIDTH x GRID_HEIGHT (no external file)
-#   "raster" -> from a PNG/JPG floorplan
-#   "dxf"    -> from a CAD DXF file (requires ezdxf & loader implementation)
-MAP_MODE = "raster"                              # "grid" | "raster" | "dxf"
-MAP_FILE = "maps/examples/example_floorplan.png"    # <--- adjust filename if needed
+# ============================================================
+# MAP / FLOORPLAN SELECTION
+# ============================================================
+# "grid"   → generate simple grid
+# "raster" → load PNG/JPG via floorplan_image_loader.py
+# "dxf"    → load CAD DXF via dxf_loader.py
+MAP_MODE = "dxf"
+MAP_FILE = "maps/examples/call_center_pt2.dxf"  # path to PNG/JPG/DXF file
 
-# =========================
-# Raster floorplan parameters
-# =========================
-# Convention:
-#   - Walls/obstacles  : dark/black
-#   - Walkable area    : light/white
-#   - Exits/doors      : bright green (#00FF00) or similar
-RASTER_DOWNSCALE_FACTOR = 5    # shrink big images so grid is manageable
+# ============================================================
+# ============================================================
+# RASTER FLOORPLAN PARAMETERS  (Pillow + NumPy ONLY)
+# ============================================================
+RASTER_DOWNSCALE_FACTOR = 5       # shrink large floorplans to speed processing
 
-# Grayscale thresholds (0–255)
-RASTER_WALL_MAX_LUMA = 170
-RASTER_WALKABLE_MIN_LUMA = 200
+# Thresholds used by pure-PIL loader:
+RASTER_WALL_THRESHOLD = 170       # luma <= this → wall candidate (Otsu overrides this)
+RASTER_EXIT_GREEN_MIN = 200       # green >= this → exit candidate (simple RGB rule)
 
-# Alias values used by raster_loader.py
-RASTER_WALL_THRESHOLD = RASTER_WALL_MAX_LUMA
-RASTER_EXIT_GREEN_MIN = RASTER_WALKABLE_MIN_LUMA
+# Exit color heuristics
+RASTER_USE_COLOR_SEGMENTATION = True  # simple RGB segmentation
+RASTER_EXIT_COLOR_RGB = (0, 255, 0)
 
-# Optional explicit colors
-RASTER_EXIT_COLOR_RGB = (0, 255, 0)          # green exits
-RASTER_WALL_COLOR_RGB = (0, 0, 0)           # black walls
-RASTER_WALKABLE_COLOR_RGB = (255, 255, 255) # white walkable
+# Small component removal
+RASTER_MIN_WALL_AREA = 3          # remove wall specks smaller than this (post-otsu)
 
-# =========================
-# DXF / CAD parameters
-# =========================
-# Your current DWG/DXF has:
-#   - walls on layer "WALL"
-#   - generic stuff on layer "0"
-# We tell the loader to treat only "WALL" as blocking.
+# Colors for potential debug rendering
+RASTER_WALL_COLOR_RGB = (0, 0, 0)
+RASTER_WALKABLE_COLOR_RGB = (255, 255, 255)
+
+# ============================================================
+# ============================================================
+# DXF / CAD PARAMETERS  (Enhanced DXF Loader)
+# ============================================================
+
+# Grid resolution into which DXF is rasterized
 DXF_GRID_WIDTH = 110
 DXF_GRID_HEIGHT = 70
 
-# Multiple possible wall / exit layers (for future flexibility)
-DXF_WALL_LAYERS = ["0"]          # only your white walls
-DXF_EXIT_LAYERS = ["WALL"]          # create this layer & draw short lines at exits
+# Your DXF layer naming:
+DXF_WALL_LAYERS = ["0"]          # your actual wall layer
+DXF_EXIT_LAYERS = ["WALL"]       # short lines drawn at exit locations
+DXF_DOOR_LAYERS = []             # fill this if your DXF has an explicit DOOR layer
 
-# These are *scale factors* relative to one grid cell size (NOT drawing units).
-# 0.4 means "about 40% of a cell from a wall line".
-DXF_WALL_DISTANCE_THRESHOLD = 0.4
+# Rasterization thresholds (in *grid cell units*, scaled to CAD units inside loader)
+DXF_WALL_DISTANCE_THRESHOLD = 0.4     # how close grid-center must be to a wall segment
 DXF_EXIT_DISTANCE_THRESHOLD = 0.4
 
-# =========================
-# Misc / plotting
-# =========================
-# You can add flags like:
+# NEW: wall thickness handling (CAD units)
+DXF_WALL_BUFFER = 0.0                 # radius added around wall segments
+
+# NEW: endpoint merging
+DXF_ENDPOINT_SNAP_DISTANCE = 0.5       # endpoints closer than this snap together
+
+# NEW: door detection via gap detection (CAD units)
+DXF_DOOR_GAP_THRESHOLD = 1.0           # small gap between wall segment endpoints → possible door
+
+# ============================================================
+# PERFORMANCE SWITCHES
+# ============================================================
+ENABLE_CONGESTION_WEIGHTS = False
+ENABLE_DYNAMIC_EVENTS = False
+
+# ============================================================
+# OPTIONAL VISUALIZATION SETTINGS
+# ============================================================
 # SHOW_TRAILS = False
 # SAVE_ANIMATION = False
-
-
-# =========================
-# Performance / model detail switches
-# =========================
-# If False, skip expensive edge congestion weighting and use base distances.
-ENABLE_CONGESTION_WEIGHTS = False
-
-# If True, skip dynamic obstacles & exits (faster, simpler behaviour)
-ENABLE_DYNAMIC_EVENTS = False   # we'll use this in simulation.py
