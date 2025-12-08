@@ -1,4 +1,3 @@
-# config.py
 """
 Global configuration for the crowd simulation project.
 
@@ -85,40 +84,49 @@ NAV_STRATEGY_MIX = {
 #   "grid"   -> simple grid of size GRID_WIDTH x GRID_HEIGHT (no external file)
 #   "raster" -> from a PNG/JPG floorplan
 #   "dxf"    -> from a CAD DXF file (requires ezdxf & loader implementation)
-MAP_MODE = "raster"              # "grid" | "raster" | "dxf"
-MAP_FILE = "maps/examples/example_floorplan.png"   # used when MAP_MODE != "grid"
+MAP_MODE = "dxf"                              # "grid" | "raster" | "dxf"
+MAP_FILE = "maps/examples/call_center_pt2.dxf"    # <--- adjust filename if needed
 
 # =========================
 # Raster floorplan parameters
 # =========================
-# How we interpret pixels when MAP_MODE = "raster"
-# Convention (can be changed, but must match raster_loader.py):
+# Convention:
 #   - Walls/obstacles  : dark/black
 #   - Walkable area    : light/white
 #   - Exits/doors      : bright green (#00FF00) or similar
-RASTER_DOWNSCALE_FACTOR = 4    # shrink big images so grid is manageable
+RASTER_DOWNSCALE_FACTOR = 6    # shrink big images so grid is manageable
 
-# Grayscale thresholds (0–255) – your raster_loader may or may not use them;
-# they are here so imports don't fail and code can be extended safely.
-RASTER_WALL_MAX_LUMA = 50      # <= 50 => wall
-RASTER_WALKABLE_MIN_LUMA = 200 # >= 200 => walkable
+# Grayscale thresholds (0–255)
+RASTER_WALL_MAX_LUMA = 60
+RASTER_WALKABLE_MIN_LUMA = 200
 
 # Alias values used by raster_loader.py
-RASTER_WALL_THRESHOLD = RASTER_WALL_MAX_LUMA      # RGB < 50 → wall
-RASTER_EXIT_GREEN_MIN = RASTER_WALKABLE_MIN_LUMA  # G ≥ 200 → exit
+RASTER_WALL_THRESHOLD = RASTER_WALL_MAX_LUMA
+RASTER_EXIT_GREEN_MIN = RASTER_WALKABLE_MIN_LUMA
 
-# If your raster_loader expects explicit RGB colors, you can use these:
-RASTER_EXIT_COLOR_RGB = (0, 255, 0)      # green exits
-RASTER_WALL_COLOR_RGB = (0, 0, 0)        # black walls
-RASTER_WALKABLE_COLOR_RGB = (255, 255, 255)  # white walkable
+# Optional explicit colors
+RASTER_EXIT_COLOR_RGB = (0, 255, 0)          # green exits
+RASTER_WALL_COLOR_RGB = (0, 0, 0)           # black walls
+RASTER_WALKABLE_COLOR_RGB = (255, 255, 255) # white walkable
 
 # =========================
-# DXF / CAD parameters (future)
+# DXF / CAD parameters
 # =========================
-# These are placeholders so that dxf_loader can read config safely.
-DXF_WALL_LAYERS = ["WALL", "WALLS"]
-DXF_DOOR_LAYERS = ["DOOR", "DOORS"]
-DXF_EXIT_LAYERS = ["EXIT", "EXIT_DOOR", "EXITS"]
+# Your current DWG/DXF has:
+#   - walls on layer "WALL"
+#   - generic stuff on layer "0"
+# We tell the loader to treat only "WALL" as blocking.
+DXF_GRID_WIDTH = 90
+DXF_GRID_HEIGHT = 60
+
+# Multiple possible wall / exit layers (for future flexibility)
+DXF_WALL_LAYERS = ["0"]          # only your white walls
+DXF_EXIT_LAYERS = ["WALL"]          # create this layer & draw short lines at exits
+
+# These are *scale factors* relative to one grid cell size (NOT drawing units).
+# 0.4 means "about 40% of a cell from a wall line".
+DXF_WALL_DISTANCE_THRESHOLD = 0.4
+DXF_EXIT_DISTANCE_THRESHOLD = 0.4
 
 # =========================
 # Misc / plotting

@@ -34,10 +34,12 @@ def main():
     # 2. Build environment either from synthetic grid or from layout matrix
     layout = load_layout_matrix_from_config()
     if layout is None:
-        # original behaviour: open grid
         env = EnvironmentGraph(config.GRID_WIDTH, config.GRID_HEIGHT)
     else:
         env = EnvironmentGraph(width=0, height=0, layout_matrix=layout)
+        # keep layout for visualization background
+        env.layout_matrix = layout
+
 
     # 3. Run visual simulation (visualization.py will construct CrowdSimulation)
     run_visual_simulation(env)

@@ -1,13 +1,16 @@
 # visualization.py
 
 import random
+from typing import Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
+from matplotlib.collections import LineCollection
 
+from environment import EnvironmentGraph, Node
 from simulation import CrowdSimulation
 from config import NUM_AGENTS, MAX_STEPS, SEED, EVACUATION_MODE
 from analysis import (
@@ -19,50 +22,109 @@ from analysis import (
 from scenarios import configure_environment_for_active_scenario
 
 
-def run_visual_simulation(env):
-    """
-    Run the visual crowd simulation on a pre-constructed EnvironmentGraph.
+# ----------------------------------------------------------------------
+# Helpers to visualize the map / layout
+# ----------------------------------------------------------------------
 
-    `env` is created in main.py, possibly from:
-      - a synthetic grid, or
-      - a raster floorplan (PNG/JPG), or
-      - later: a DXF floorplan.
+def _build_background_matrix(env: EnvironmentGraph) -> np.ndarray:
     """
+    Create a 2D matrix where:
+      - walls/blocked cells are bright
+      - exits are medium
+      - open corridors are dark
+
+    This is what we draw underneath the agents as the "map".
+    """
+    h, w = env.height, env.width
+    bg = np.zeros((h, w), dtype=float)
+
+    for y in range(h):
+        for x in range(w):
+            node: Node = (x, y)
+            if node not in env.graph:
+                continue
+
+            if not env.is_accessible(node):
+                # wall / blocked
+                bg[y, x] = 1.0
+            elif env.is_exit(node):
+                # exit
+                bg[y, x] = 0.5
+            else:
+                # open corridor
+                bg[y, x] = 0.1
+
+    return bg
+
+
+def _make_edge_collection(env: EnvironmentGraph, pos: dict) -> LineCollection:
+    """
+    Prepare a LineCollection for all graph edges (faster than many ax.plot calls).
+    """
+    segments = []
+    for u, v in env.graph.edges():
+        x1, y1 = pos[u]
+        x2, y2 = pos[v]
+        segments.append([(x1, y1), (x2, y2)])
+
+    lc = LineCollection(
+        segments,
+        linewidths=0.4,
+        alpha=0.25,
+        zorder=-1,
+    )
+    return lc
+
+
+# ----------------------------------------------------------------------
+# Main visual simulation
+# ----------------------------------------------------------------------
+
+def run_visual_simulation(env: EnvironmentGraph):
     random.seed(SEED)
 
-    # --- configure environment according to the active scenario (exits etc.) ---
+    # Apply scenario-specific environment configuration (exits, etc.)
     configure_environment_for_active_scenario(env)
 
-    # --- create simulation object ---
+    # Create simulation on this environment
     sim = CrowdSimulation(env, NUM_AGENTS)
 
-    # Precompute node positions for drawing
+    # Positions of nodes
     pos = {n: env.get_pos(n) for n in env.graph.nodes()}
 
     # --- figure & axes setup ---
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.set_title("Graph-based Crowd Simulation")
-    ax.set_xlim(-1, env.width)
-    ax.set_ylim(-1, env.height)
+    ax.set_title("Crowd Simulation on Floorplan Graph")
+    ax.set_xlim(-0.5, env.width - 0.5)
+    ax.set_ylim(-0.5, env.height - 0.5)
     ax.set_aspect("equal")
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
 
-    # --- draw static edges (background) ---
-    for (u, v) in env.graph.edges():
-        x1, y1 = pos[u]
-        x2, y2 = pos[v]
-        ax.plot([x1, x2], [y1, y2], linewidth=0.4, alpha=0.25)
+    # --- draw static floorplan background (walls / exits) ---
+    bg_mat = _build_background_matrix(env)
+    bg_img = ax.imshow(
+        bg_mat,
+        origin="lower",
+        extent=(-0.5, env.width - 0.5, -0.5, env.height - 0.5),
+        cmap="Greys",
+        alpha=0.7,
+        interpolation="nearest",
+        zorder=-2,
+    )
+
+    # --- draw static graph edges on top of map ---
+    edge_collection = _make_edge_collection(env, pos)
+    ax.add_collection(edge_collection)
 
     # --- helpers for node types ---
-
     def get_exit_nodes():
         return [n for n in env.graph.nodes() if env.is_exit(n)]
 
     def get_blocked_nodes():
-        return [n for n, d in env.graph.nodes(data=True) if not env.is_accessible(n)]
+        return [n for n, _ in env.graph.nodes(data=True) if not env.is_accessible(n)]
 
-    # Initial sets
+    # initial sets
     exit_nodes = get_exit_nodes()
     blocked_nodes = get_blocked_nodes()
 
@@ -84,15 +146,15 @@ def run_visual_simulation(env):
     blocked_scat = ax.scatter(
         blocked_xy[:, 0] if len(blocked_xy) > 0 else [],
         blocked_xy[:, 1] if len(blocked_xy) > 0 else [],
-        s=40,
-        marker="X",
-        edgecolors="darkred",
-        facecolors="red",
+        s=10,
+        marker="s",
+        edgecolors="none",
+        facecolors="0.3",  #dark gray
         label="Blocked node",
-        zorder=3,
+        zorder=1.5,
     )
 
-    # --- live density heatmap ---
+    # --- live density heatmap (congestion) ---
     density_mat = sim.get_density_matrix()
     density_img = ax.imshow(
         density_mat,
@@ -101,7 +163,7 @@ def run_visual_simulation(env):
         cmap="Reds",
         alpha=0.4,
         interpolation="nearest",
-        zorder=0,
+        zorder=-0.5,
     )
 
     cbar = fig.colorbar(density_img, ax=ax, fraction=0.046, pad=0.04)
@@ -149,83 +211,48 @@ def run_visual_simulation(env):
 
     # --- legend ---
     legend_elements = [
-        Patch(
-            facecolor="limegreen",
-            edgecolor="black",
-            label="Exit node",
-        ),
-        Patch(
-            facecolor="red",
-            edgecolor="darkred",
-            label="Blocked node",
-        ),
+        Patch(facecolor="limegreen", edgecolor="black", label="Exit node"),
+        Patch(facecolor="red", edgecolor="darkred", label="Blocked node"),
         Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label="Leader",
+            [0], [0],
+            marker="o", color="w", label="Leader",
             markerfacecolor=type_to_color["leader"],
-            markeredgecolor="black",
-            markersize=8,
+            markeredgecolor="black", markersize=8,
         ),
         Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label="Follower",
+            [0], [0],
+            marker="o", color="w", label="Follower",
             markerfacecolor=type_to_color["follower"],
-            markeredgecolor="black",
-            markersize=8,
+            markeredgecolor="black", markersize=8,
         ),
         Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label="Normal",
+            [0], [0],
+            marker="o", color="w", label="Normal",
             markerfacecolor=type_to_color["normal"],
-            markeredgecolor="black",
-            markersize=8,
+            markeredgecolor="black", markersize=8,
         ),
         Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label="Panic",
+            [0], [0],
+            marker="o", color="w", label="Panic",
             markerfacecolor=type_to_color["panic"],
-            markeredgecolor="black",
-            markersize=8,
+            markeredgecolor="black", markersize=8,
         ),
     ]
-    ax.legend(
-        handles=legend_elements,
-        loc="upper right",
-        framealpha=0.9,
-        fontsize=9,
-    )
+    ax.legend(handles=legend_elements, loc="upper right", framealpha=0.9, fontsize=9)
 
     # --- update function for animation ---
 
-    def update(frame):
-        # Advance simulation one step
+    def update(frame: int):
         sim.step()
 
-        # Update agent positions & colors
         xs, ys, cs = get_agent_xy_and_colors()
-        if len(xs) > 0:
-            agent_scat.set_offsets(np.column_stack([xs, ys]))
-        else:
-            agent_scat.set_offsets(np.empty((0, 2)))
+        agent_scat.set_offsets(np.column_stack([xs, ys]))
         agent_scat.set_facecolors(cs)
 
-        # Update density heatmap
         density_mat = sim.get_density_matrix()
         density_img.set_data(density_mat)
 
-        # Update exits & blocked nodes (in case scenario changes during sim)
+        # update exits & blocked nodes (in case of dynamic events)
         exit_nodes = get_exit_nodes()
         blocked_nodes = get_blocked_nodes()
 
@@ -241,7 +268,6 @@ def run_visual_simulation(env):
         exit_scat.set_offsets(exit_xy)
         blocked_scat.set_offsets(blocked_xy)
 
-        # Info panel
         info_text.set_text(
             f"Step: {sim.time_step}\n"
             f"Agents: {len(sim.agents)}\n"
@@ -258,9 +284,6 @@ def run_visual_simulation(env):
         interval=60,
         blit=False,
     )
-
-    # Optional: save MP4
-    # anim.save("crowd_simulation_dynamic.mp4", fps=20, dpi=150)
 
     plt.tight_layout()
     plt.show()
@@ -285,8 +308,4 @@ def show_density_heatmap(sim: CrowdSimulation):
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.tight_layout()
-
-    # Optional: save figure for report
-    # plt.savefig("crowd_density_heatmap.png", dpi=200)
-
     plt.show()
