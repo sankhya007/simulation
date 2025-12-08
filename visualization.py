@@ -23,8 +23,10 @@ from analysis import (
     plot_max_density_over_time,
     plot_metrics_by_agent_type,
     compute_evacuation_metrics,
+    print_evacuation_report,
     show_evacuation_report,
     plot_metrics_by_strategy,
+    plot_bottleneck_nodes,
 )
 from scenarios import configure_environment_for_active_scenario
 
@@ -275,24 +277,27 @@ def run_visual_simulation():
     plot_max_density_over_time(sim)
     plot_metrics_by_agent_type(sim)
     plot_metrics_by_strategy(sim)
+    plot_metrics_by_agent_type(sim)
+
 
     # Evacuation-specific KPIs + bottlenecks
     evac_metrics = None
     if EVACUATION_MODE:
         evac_metrics = compute_evacuation_metrics(sim)
         show_evacuation_report(evac_metrics)
-
+        
+    plot_bottleneck_nodes(sim, top_k=5)
     show_density_heatmap(sim, evac_metrics)
     plot_travel_time_histogram(sim)
     plot_max_density_over_time(sim)
     plot_metrics_by_agent_type(sim)
 
+    from config import EVACUATION_MODE
+    if EVACUATION_MODE:
+        print_evacuation_report(sim)
 
-def show_density_heatmap(sim: CrowdSimulation, evac_metrics: dict | None = None):
-    """
-    Show cumulative visit heatmap, and (optionally) highlight bottleneck nodes
-    with star markers and visit counts.
-    """
+
+def show_density_heatmap(sim: CrowdSimulation, highlight_bottlenecks: bool = True):
     density = sim.get_density_matrix()
 
     plt.figure(figsize=(6, 4))
@@ -302,38 +307,15 @@ def show_density_heatmap(sim: CrowdSimulation, evac_metrics: dict | None = None)
     plt.xlabel("X")
     plt.ylabel("Y")
 
-    # Optional bottleneck overlay
-    if evac_metrics is not None and evac_metrics.get("bottlenecks"):
-        bottlenecks = evac_metrics["bottlenecks"]
-        xs = [node[0] for node, _ in bottlenecks]
-        ys = [node[1] for node, _ in bottlenecks]
-
-        # Star markers around top-K bottleneck nodes
-        plt.scatter(
-            xs,
-            ys,
-            marker="*",
-            s=150,
-            edgecolors="black",
-            facecolors="none",
-            linewidths=1.5,
-            label="Bottleneck nodes",
-        )
-
-        # Annotate with visit counts
-        for (node, count) in bottlenecks:
-            x, y = node
-            plt.text(
-                x,
-                y + 0.2,
-                str(count),
-                ha="center",
-                va="bottom",
-                fontsize=8,
-                color="black",
-            )
-
-        plt.legend(loc="upper right", framealpha=0.9, fontsize=8)
+    if highlight_bottlenecks:
+        metrics = compute_evacuation_metrics(sim)
+        bottlenecks = metrics["bottleneck_nodes"]
+        if bottlenecks:
+            xs = [node[0] for node, _ in bottlenecks]
+            ys = [node[1] for node, _ in bottlenecks]
+            plt.scatter(xs, ys, s=80, facecolors="none", edgecolors="cyan", linewidths=1.5,
+                        label="Top bottlenecks")
+            plt.legend(loc="upper right")
 
     plt.tight_layout()
 
