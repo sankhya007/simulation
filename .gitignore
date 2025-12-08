@@ -102,3 +102,13 @@ trial_*.json
 config_local.py
 .env
 *.env
+
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.DS_Store
+.env
+.venv
+*.egg-info/

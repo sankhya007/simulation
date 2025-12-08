@@ -163,21 +163,50 @@ python main.py run evacuation --agents 300 --steps 1500 --overlay --out-dir resu
 ```
 crowd/
 │
-├── main.py                   # CLI + visual runner + batch engine
-├── simulation.py             # CrowdSimulation engine
-├── agent.py                  # Agent behaviours
-├── environment.py            # Grid/graph environment
+├── main.py
+├── config.py
+├── scenarios.py
+├── simulation.py
+├── environment.py
+├── agent.py
+├── analysis.py
 │
 ├── maps/
-│   ├── raster_loader.py      # PNG/JPG → layout
-│   ├── dxf_loader.py         # DXF → layout (+ metadata)
-│   ├── map_loader.py         # Chooses raster/grid/dxf mode
+│   ├── __init__.py
+│   ├── map_loader.py
+│   ├── map_meta.py
+│   ├── raster_loader.py
+│   ├── dxf_loader.py
+│   ├── floorplan_image_loader.py
+│   ├── examples/
+│   │   ├── example_floorplan.png
+│   │   └── call_center_pt2.dxf
+│   └── misc/
 │
-├── analysis.py               # Metrics, bottlenecks, overlays
-├── scenarios.py              # Scenario presets
-├── visualization.py          # Live visualization + overlays
+├── visualization.py       # patched run_visual_simulation
 │
-└── README.md                 # Documentation
+├── tools/
+│   ├── preview_raster.py
+│   ├── dxf_overlay_preview.py
+│   ├── export_graph.py (optional)
+│   ├── map_debug.py (optional)
+│   └── ...
+│
+├── tests/
+│   ├── test_dxf_loader.py
+│   ├── test_raster_loader.py
+│   ├── test_simulation_step.py
+│   ├── fixtures/
+│   │   └── ...
+│   └── ...
+│
+├── requirements.txt
+├── README.md
+├── DEMO.md
+├── .gitignore
+│
+└── (NO __pycache__/ directories should exist)
+
 ```
 
 ---
