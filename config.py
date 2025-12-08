@@ -84,8 +84,8 @@ NAV_STRATEGY_MIX = {
 #   "grid"   -> simple grid of size GRID_WIDTH x GRID_HEIGHT (no external file)
 #   "raster" -> from a PNG/JPG floorplan
 #   "dxf"    -> from a CAD DXF file (requires ezdxf & loader implementation)
-MAP_MODE = "dxf"                              # "grid" | "raster" | "dxf"
-MAP_FILE = "maps/examples/call_center_pt2.dxf"    # <--- adjust filename if needed
+MAP_MODE = "raster"                              # "grid" | "raster" | "dxf"
+MAP_FILE = "maps/examples/example_floorplan.png"    # <--- adjust filename if needed
 
 # =========================
 # Raster floorplan parameters
@@ -94,10 +94,10 @@ MAP_FILE = "maps/examples/call_center_pt2.dxf"    # <--- adjust filename if need
 #   - Walls/obstacles  : dark/black
 #   - Walkable area    : light/white
 #   - Exits/doors      : bright green (#00FF00) or similar
-RASTER_DOWNSCALE_FACTOR = 6    # shrink big images so grid is manageable
+RASTER_DOWNSCALE_FACTOR = 5    # shrink big images so grid is manageable
 
 # Grayscale thresholds (0–255)
-RASTER_WALL_MAX_LUMA = 60
+RASTER_WALL_MAX_LUMA = 170
 RASTER_WALKABLE_MIN_LUMA = 200
 
 # Alias values used by raster_loader.py
@@ -116,8 +116,8 @@ RASTER_WALKABLE_COLOR_RGB = (255, 255, 255) # white walkable
 #   - walls on layer "WALL"
 #   - generic stuff on layer "0"
 # We tell the loader to treat only "WALL" as blocking.
-DXF_GRID_WIDTH = 90
-DXF_GRID_HEIGHT = 60
+DXF_GRID_WIDTH = 110
+DXF_GRID_HEIGHT = 70
 
 # Multiple possible wall / exit layers (for future flexibility)
 DXF_WALL_LAYERS = ["0"]          # only your white walls
@@ -134,3 +134,13 @@ DXF_EXIT_DISTANCE_THRESHOLD = 0.4
 # You can add flags like:
 # SHOW_TRAILS = False
 # SAVE_ANIMATION = False
+
+
+# =========================
+# Performance / model detail switches
+# =========================
+# If False, skip expensive edge congestion weighting and use base distances.
+ENABLE_CONGESTION_WEIGHTS = False
+
+# If True, skip dynamic obstacles & exits (faster, simpler behaviour)
+ENABLE_DYNAMIC_EVENTS = False   # we'll use this in simulation.py

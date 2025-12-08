@@ -2,8 +2,10 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
 
 from simulation import CrowdSimulation
+from config import MAP_MODE, MAP_FILE
 
 
 def plot_travel_time_histogram(sim: CrowdSimulation):
@@ -136,3 +138,118 @@ def print_evacuation_report(sim: CrowdSimulation):
     print(f"Time to evacuate 50% of agents: {fmt(kpis['t_50'])}")
     print(f"Time to evacuate 80% of agents: {fmt(kpis['t_80'])}")
     print(f"Time to evacuate 90% of agents: {fmt(kpis['t_90'])}")
+
+
+def find_bottleneck_cells(sim, top_k: int = 5, min_visits: int = 1):
+    """
+    Find top-k bottleneck cells from the density matrix.
+
+    Returns a list of (x, y, visits) in grid coordinates.
+    """
+    density = sim.get_density_matrix()
+    if density is None:
+        return []
+
+    density = np.asarray(density)
+    h, w = density.shape
+
+    flat = density.ravel()
+    # sort indices by descending visit count
+    indices = np.argsort(flat)[::-1]
+
+    bottlenecks = []
+    for idx in indices:
+        if len(bottlenecks) >= top_k:
+            break
+        visits = flat[idx]
+        if visits < min_visits:
+            break
+        y, x = divmod(idx, w)
+        bottlenecks.append((x, y, int(visits)))
+    return bottlenecks
+
+
+def overlay_results_on_floorplan(sim, env, top_k: int = 5):
+    """
+    Overlay the density heatmap + bottleneck markers on top of the
+    original raster floorplan.
+
+    Works only when MAP_MODE == 'raster' and MAP_FILE is a PNG/JPG.
+    """
+    if MAP_MODE.lower() != "raster":
+        print("[overlay_results_on_floorplan] Skipping: MAP_MODE is not 'raster'.")
+        return
+    if not MAP_FILE:
+        print("[overlay_results_on_floorplan] Skipping: MAP_FILE is not set.")
+        return
+
+    try:
+        img = Image.open(MAP_FILE).convert("RGB")
+    except Exception as e:
+        print(f"[overlay_results_on_floorplan] Could not open floorplan image: {e}")
+        return
+
+    density = sim.get_density_matrix()
+    density = np.asarray(density)
+    h, w = density.shape
+
+    # Resize the image to match the grid resolution for clean alignment
+    img_resized = img.resize((w, h))  # (width, height)
+    img_arr = np.asarray(img_resized)
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.set_title("Density & Bottlenecks over Floorplan", fontsize=14, pad=12)
+
+    # Floorplan as background
+    ax.imshow(
+        img_arr,
+        origin="lower",
+        extent=(-0.5, w - 0.5, -0.5, h - 0.5),
+        alpha=0.9,
+    )
+
+    # Density heatmap on top
+    dens_img = ax.imshow(
+        density,
+        origin="lower",
+        extent=(-0.5, w - 0.5, -0.5, h - 0.5),
+        cmap="Reds",
+        alpha=0.5,
+    )
+    cbar = fig.colorbar(dens_img, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Cumulative node visits (congestion)")
+
+    # Bottleneck markers
+    bottlenecks = find_bottleneck_cells(sim, top_k=top_k, min_visits=1)
+    if bottlenecks:
+        xs = [x for x, y, v in bottlenecks]
+        ys = [y for x, y, v in bottlenecks]
+        ax.scatter(
+            xs,
+            ys,
+            s=80,
+            edgecolors="black",
+            facecolors="cyan",
+            marker="o",
+            label="Bottleneck",
+            zorder=5,
+        )
+        # Label them B1, B2, ...
+        for i, (x, y, v) in enumerate(bottlenecks, start=1):
+            ax.text(
+                x + 0.2,
+                y + 0.2,
+                f"B{i}",
+                color="yellow",
+                fontsize=8,
+                zorder=6,
+            )
+
+    ax.set_xlim(-0.5, w - 0.5)
+    ax.set_ylim(-0.5, h - 0.5)
+    ax.set_xlabel("Grid X")
+    ax.set_ylabel("Grid Y")
+    ax.legend(loc="upper right", framealpha=0.9)
+
+    plt.tight_layout()
+    plt.show()

@@ -11,6 +11,8 @@ from environment import EnvironmentGraph
 from agent import Agent, DecisionState
 from config import (
     COLLISION_DISTANCE,
+    ENABLE_CONGESTION_WEIGHTS,
+    ENABLE_DYNAMIC_EVENTS,
     GROUP_SIZE,
     EDGE_BASE_CAPACITY,
     DYNAMIC_BLOCKS_ENABLED,
@@ -303,20 +305,28 @@ class CrowdSimulation:
         self.max_density_per_step.append(max_density)
 
         # 2) apply dynamic environment events
-        self._apply_dynamic_events(node_occupancy)
-
+        if ENABLE_DYNAMIC_EVENTS:
+            self._apply_dynamic_events(node_occupancy)
+            
         # 3) edge occupancy approximation from node occupancy, then update weights
         edge_occupancy: Dict[EdgeKey, int] = {}
         edge_over_capacity: Dict[EdgeKey, bool] = {}
 
-        for u, v in self.env.graph.edges():
-            occ = node_occupancy.get(u, 0) + node_occupancy.get(v, 0)
-            edge_occupancy[(u, v)] = occ
+        if ENABLE_CONGESTION_WEIGHTS:
+            for u, v in self.env.graph.edges():
+                occ = node_occupancy.get(u, 0) + node_occupancy.get(v, 0)
+                edge_occupancy[(u, v)] = occ
 
-            capacity = self.env.graph[u][v].get("max_capacity", EDGE_BASE_CAPACITY)
-            edge_over_capacity[(u, v)] = occ > capacity
+                # compare to capacity
+                cap = self.env.graph[u][v].get("max_capacity", EDGE_BASE_CAPACITY)
+                over = (occ > cap)
+                edge_over_capacity[(u, v)] = over
 
-        self.env.update_all_edge_weights_from_occupancy(edge_occupancy)
+                # update dynamic weight
+                self.env.set_edge_dynamic_weight(u, v, occ)
+        else:
+            # fast mode: no congestion weighting, edges stay at base distance
+            self.env.reset_edge_weights_to_distance()
 
         # 4) group leader positions
         group_targets: Dict[int, Node] = {}

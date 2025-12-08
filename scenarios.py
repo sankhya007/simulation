@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict
 
 import config
-from environment import EnvironmentGraph, Node
+from environment import EnvironmentGraph
 
 
 @dataclass
@@ -18,10 +18,14 @@ class Scenario:
     block_prob: float
     exit_toggle_every_n: int
     evacuation_mode: bool
-    initial_exit_strategy: str  # "none" | "borders" | "corners"
+    # How to set initial exits on the grid:
+    #   "none"    -> don't change exits (use map / layout defaults)
+    #   "borders" -> mark all border cells as exits
+    #   "corners" -> only corners as exits
+    initial_exit_strategy: str
 
 
-# --- Define scenario presets ---
+# --- Scenario presets -------------------------------------------------------
 
 SCENARIO_PRESETS: Dict[str, Scenario] = {
     # 1. Normal navigation
@@ -37,6 +41,7 @@ SCENARIO_PRESETS: Dict[str, Scenario] = {
         evacuation_mode=False,
         initial_exit_strategy="none",
     ),
+
     # 2. High-density crowd
     "high_density": Scenario(
         name="high_density",
@@ -50,6 +55,7 @@ SCENARIO_PRESETS: Dict[str, Scenario] = {
         evacuation_mode=False,
         initial_exit_strategy="none",
     ),
+
     # 3. Blocked paths / dynamic obstacles
     "blocked": Scenario(
         name="blocked",
@@ -63,6 +69,7 @@ SCENARIO_PRESETS: Dict[str, Scenario] = {
         evacuation_mode=False,
         initial_exit_strategy="none",
     ),
+
     # 4. Emergency evacuation
     "evacuation": Scenario(
         name="evacuation",
@@ -81,9 +88,12 @@ SCENARIO_PRESETS: Dict[str, Scenario] = {
 _ACTIVE_SCENARIO: Optional[Scenario] = None
 
 
+# --- Scenario management ----------------------------------------------------
+
 def load_and_apply_scenario(name: str) -> Scenario:
     """
     Select a scenario preset by name and apply it to config globals.
+    This is called from main.py and experiment.py.
     """
     global _ACTIVE_SCENARIO
     key = name.lower()
@@ -97,7 +107,7 @@ def load_and_apply_scenario(name: str) -> Scenario:
     scenario = SCENARIO_PRESETS[key]
     _ACTIVE_SCENARIO = scenario
 
-    # Apply to config
+    # Apply to config: this is why high_density will really use 300 agents, etc.
     config.NUM_AGENTS = scenario.num_agents
     config.DYNAMIC_BLOCKS_ENABLED = scenario.dynamic_blocks
     config.DYNAMIC_EXITS_ENABLED = scenario.dynamic_exits
@@ -116,17 +126,18 @@ def get_active_scenario() -> Optional[Scenario]:
 def configure_environment_for_active_scenario(env: EnvironmentGraph):
     """
     Apply environment-level settings for the active scenario
-    (initial exits, etc.).
+    (initial exits etc.). Called from visualization.py.
     """
     scenario = _ACTIVE_SCENARIO
     if scenario is None:
         return
 
+    # If we don't want to touch exits, just return.
     if scenario.initial_exit_strategy == "none":
         return
 
     if scenario.initial_exit_strategy == "borders":
-        # Mark all border nodes as exits
+        # Mark ALL border nodes as exits (works both for grid and map-based envs)
         for x in range(env.width):
             env.mark_exit((x, 0))
             env.mark_exit((x, env.height - 1))
@@ -146,4 +157,5 @@ def configure_environment_for_active_scenario(env: EnvironmentGraph):
 
 
 def list_scenarios():
+    """Small helper if you want to print available scenarios somewhere."""
     return sorted(SCENARIO_PRESETS.keys())

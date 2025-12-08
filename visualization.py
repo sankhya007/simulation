@@ -1,7 +1,6 @@
 # visualization.py
 
 import random
-from typing import Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,125 +9,82 @@ from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
 
-from environment import EnvironmentGraph, Node
+import config
 from simulation import CrowdSimulation
-from config import NUM_AGENTS, MAX_STEPS, SEED, EVACUATION_MODE
 from analysis import (
     plot_travel_time_histogram,
     plot_max_density_over_time,
     plot_metrics_by_agent_type,
     print_evacuation_report,
+    overlay_results_on_floorplan,
+
 )
 from scenarios import configure_environment_for_active_scenario
 
+# ---- visualization knobs ----
+SHOW_DENSITY_HEATMAP = True
+EDGE_ALPHA = 0.25
+AGENT_SIZE = 30
 
-# ----------------------------------------------------------------------
-# Helpers to visualize the map / layout
-# ----------------------------------------------------------------------
 
-def _build_background_matrix(env: EnvironmentGraph) -> np.ndarray:
+def run_visual_simulation(env):
     """
-    Create a 2D matrix where:
-      - walls/blocked cells are bright
-      - exits are medium
-      - open corridors are dark
+    Run the visual crowd simulation on a pre-constructed EnvironmentGraph.
 
-    This is what we draw underneath the agents as the "map".
+    `env` is created in main.py (grid / raster / dxf).
     """
-    h, w = env.height, env.width
-    bg = np.zeros((h, w), dtype=float)
+    random.seed(config.SEED)
 
-    for y in range(h):
-        for x in range(w):
-            node: Node = (x, y)
-            if node not in env.graph:
-                continue
-
-            if not env.is_accessible(node):
-                # wall / blocked
-                bg[y, x] = 1.0
-            elif env.is_exit(node):
-                # exit
-                bg[y, x] = 0.5
-            else:
-                # open corridor
-                bg[y, x] = 0.1
-
-    return bg
-
-
-def _make_edge_collection(env: EnvironmentGraph, pos: dict) -> LineCollection:
-    """
-    Prepare a LineCollection for all graph edges (faster than many ax.plot calls).
-    """
-    segments = []
-    for u, v in env.graph.edges():
-        x1, y1 = pos[u]
-        x2, y2 = pos[v]
-        segments.append([(x1, y1), (x2, y2)])
-
-    lc = LineCollection(
-        segments,
-        linewidths=0.4,
-        alpha=0.25,
-        zorder=-1,
-    )
-    return lc
-
-
-# ----------------------------------------------------------------------
-# Main visual simulation
-# ----------------------------------------------------------------------
-
-def run_visual_simulation(env: EnvironmentGraph):
-    random.seed(SEED)
-
-    # Apply scenario-specific environment configuration (exits, etc.)
+    # Apply scenario-specific environment configuration (exits, initial blocks, etc.)
     configure_environment_for_active_scenario(env)
 
-    # Create simulation on this environment
-    sim = CrowdSimulation(env, NUM_AGENTS)
+    # Use NUM_AGENTS from *current* config (scenario may have changed it)
+    sim = CrowdSimulation(env, config.NUM_AGENTS)
 
-    # Positions of nodes
+    # Node positions
     pos = {n: env.get_pos(n) for n in env.graph.nodes()}
 
-    # --- figure & axes setup ---
-    fig, ax = plt.subplots(figsize=(9, 6))
-    ax.set_title("Crowd Simulation on Floorplan Graph")
-    ax.set_xlim(-0.5, env.width - 0.5)
-    ax.set_ylim(-0.5, env.height - 0.5)
-    ax.set_aspect("equal")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
+    # Precompute edges as segments for fast drawing
+    edge_segments = [(pos[u], pos[v]) for u, v in env.graph.edges()]
 
-    # --- draw static floorplan background (walls / exits) ---
-    bg_mat = _build_background_matrix(env)
-    bg_img = ax.imshow(
-        bg_mat,
-        origin="lower",
-        extent=(-0.5, env.width - 0.5, -0.5, env.height - 0.5),
-        cmap="Greys",
-        alpha=0.7,
-        interpolation="nearest",
-        zorder=-2,
-    )
-
-    # --- draw static graph edges on top of map ---
-    edge_collection = _make_edge_collection(env, pos)
-    ax.add_collection(edge_collection)
-
-    # --- helpers for node types ---
+    # Helpers
     def get_exit_nodes():
         return [n for n in env.graph.nodes() if env.is_exit(n)]
 
     def get_blocked_nodes():
-        return [n for n, _ in env.graph.nodes(data=True) if not env.is_accessible(n)]
+        return [n for n, d in env.graph.nodes(data=True) if not env.is_accessible(n)]
 
-    # initial sets
     exit_nodes = get_exit_nodes()
     blocked_nodes = get_blocked_nodes()
 
     exit_xy = np.array([pos[n] for n in exit_nodes]) if exit_nodes else np.empty((0, 2))
+    blocked_xy = (
+        np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
+    )
+
+    # Style
+    plt.style.use("dark_background")
+
+    # Figure
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.set_title("Crowd Simulation on Floorplan Graph", fontsize=14, pad=12)
+    ax.set_xlim(-1, env.width)
+    ax.set_ylim(-1, env.height)
+    ax.set_aspect("equal")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+
+    # Static edges
+    if edge_segments:
+        lc = LineCollection(
+            edge_segments,
+            linewidths=0.4,
+            alpha=EDGE_ALPHA,
+            zorder=1,
+        )
+        ax.add_collection(lc)
+
+    # Exits & blocked nodes
     exit_scat = ax.scatter(
         exit_xy[:, 0] if len(exit_xy) > 0 else [],
         exit_xy[:, 1] if len(exit_xy) > 0 else [],
@@ -140,40 +96,39 @@ def run_visual_simulation(env: EnvironmentGraph):
         zorder=3,
     )
 
-    blocked_xy = (
-        np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
-    )
     blocked_scat = ax.scatter(
         blocked_xy[:, 0] if len(blocked_xy) > 0 else [],
         blocked_xy[:, 1] if len(blocked_xy) > 0 else [],
-        s=10,
-        marker="s",
-        edgecolors="none",
-        facecolors="0.3",  #dark gray
+        s=40,
+        marker="X",
+        edgecolors="darkred",
+        facecolors="red",
         label="Blocked node",
-        zorder=1.5,
+        zorder=3,
     )
 
-    # --- live density heatmap (congestion) ---
-    density_mat = sim.get_density_matrix()
-    density_img = ax.imshow(
-        density_mat,
-        origin="lower",
-        extent=(-0.5, env.width - 0.5, -0.5, env.height - 0.5),
-        cmap="Reds",
-        alpha=0.4,
-        interpolation="nearest",
-        zorder=-0.5,
-    )
+    # Density heatmap
+    if SHOW_DENSITY_HEATMAP:
+        density_mat = sim.get_density_matrix()
+        density_img = ax.imshow(
+            density_mat,
+            origin="lower",
+            extent=(-0.5, env.width - 0.5, -0.5, env.height - 0.5),
+            cmap="Reds",
+            alpha=0.4,
+            interpolation="nearest",
+            zorder=0,
+        )
+        cbar = fig.colorbar(density_img, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label("Cumulative node visits (congestion)")
+    else:
+        density_img = None
 
-    cbar = fig.colorbar(density_img, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Cumulative node visits (congestion)")
-
-    # --- agents: initial positions + color by type ---
+    # Agent colors
     type_to_color = {
         "leader": "tab:blue",
         "follower": "tab:orange",
-        "normal": "gray",
+        "normal": "0.8",
         "panic": "tab:red",
     }
 
@@ -183,21 +138,23 @@ def run_visual_simulation(env: EnvironmentGraph):
             x, y = agent.get_position()
             xs.append(x)
             ys.append(y)
-            cs.append(type_to_color.get(agent.agent_type, "black"))
+            cs.append(type_to_color.get(agent.agent_type, "white"))
+        if not xs:
+            return np.empty((0,)), np.empty((0,)), []
         return np.array(xs), np.array(ys), cs
 
     xs, ys, cs = get_agent_xy_and_colors()
     agent_scat = ax.scatter(
         xs,
         ys,
-        s=40,
+        s=AGENT_SIZE,
         c=cs,
         edgecolors="black",
-        linewidths=0.5,
+        linewidths=0.4,
         zorder=4,
     )
 
-    # --- info text ---
+    # Info panel
     info_text = ax.text(
         0.02,
         0.98,
@@ -205,65 +162,55 @@ def run_visual_simulation(env: EnvironmentGraph):
         transform=ax.transAxes,
         va="top",
         fontsize=10,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.6),
         zorder=5,
     )
 
-    # --- legend ---
+    # Legend
     legend_elements = [
         Patch(facecolor="limegreen", edgecolor="black", label="Exit node"),
         Patch(facecolor="red", edgecolor="darkred", label="Blocked node"),
-        Line2D(
-            [0], [0],
-            marker="o", color="w", label="Leader",
-            markerfacecolor=type_to_color["leader"],
-            markeredgecolor="black", markersize=8,
-        ),
-        Line2D(
-            [0], [0],
-            marker="o", color="w", label="Follower",
-            markerfacecolor=type_to_color["follower"],
-            markeredgecolor="black", markersize=8,
-        ),
-        Line2D(
-            [0], [0],
-            marker="o", color="w", label="Normal",
-            markerfacecolor=type_to_color["normal"],
-            markeredgecolor="black", markersize=8,
-        ),
-        Line2D(
-            [0], [0],
-            marker="o", color="w", label="Panic",
-            markerfacecolor=type_to_color["panic"],
-            markeredgecolor="black", markersize=8,
-        ),
+        Line2D([0], [0], marker="o", color="w",
+               label="Leader",
+               markerfacecolor=type_to_color["leader"],
+               markeredgecolor="black", markersize=8),
+        Line2D([0], [0], marker="o", color="w",
+               label="Follower",
+               markerfacecolor=type_to_color["follower"],
+               markeredgecolor="black", markersize=8),
+        Line2D([0], [0], marker="o", color="w",
+               label="Normal",
+               markerfacecolor=type_to_color["normal"],
+               markeredgecolor="black", markersize=8),
+        Line2D([0], [0], marker="o", color="w",
+               label="Panic",
+               markerfacecolor=type_to_color["panic"],
+               markeredgecolor="black", markersize=8),
     ]
     ax.legend(handles=legend_elements, loc="upper right", framealpha=0.9, fontsize=9)
 
-    # --- update function for animation ---
+    # --- animation update ---
 
-    def update(frame: int):
+    def update(frame):
         sim.step()
 
         xs, ys, cs = get_agent_xy_and_colors()
-        agent_scat.set_offsets(np.column_stack([xs, ys]))
+        if len(xs) > 0:
+            agent_scat.set_offsets(np.column_stack([xs, ys]))
+        else:
+            agent_scat.set_offsets(np.empty((0, 2)))
         agent_scat.set_facecolors(cs)
 
-        density_mat = sim.get_density_matrix()
-        density_img.set_data(density_mat)
+        if SHOW_DENSITY_HEATMAP and density_img is not None:
+            density_mat = sim.get_density_matrix()
+            density_img.set_data(density_mat)
 
-        # update exits & blocked nodes (in case of dynamic events)
+        # exits & blocked nodes may change in dynamic scenarios
         exit_nodes = get_exit_nodes()
         blocked_nodes = get_blocked_nodes()
 
-        if exit_nodes:
-            exit_xy = np.array([pos[n] for n in exit_nodes])
-        else:
-            exit_xy = np.empty((0, 2))
-        if blocked_nodes:
-            blocked_xy = np.array([pos[n] for n in blocked_nodes])
-        else:
-            blocked_xy = np.empty((0, 2))
+        exit_xy = np.array([pos[n] for n in exit_nodes]) if exit_nodes else np.empty((0, 2))
+        blocked_xy = np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
 
         exit_scat.set_offsets(exit_xy)
         blocked_scat.set_offsets(blocked_xy)
@@ -275,12 +222,15 @@ def run_visual_simulation(env: EnvironmentGraph):
             f"Occupied nodes: {len(sim.last_node_occupancy)}"
         )
 
-        return agent_scat, density_img, exit_scat, blocked_scat, info_text
+        if SHOW_DENSITY_HEATMAP and density_img is not None:
+            return agent_scat, density_img, exit_scat, blocked_scat, info_text
+        else:
+            return agent_scat, exit_scat, blocked_scat, info_text
 
     anim = FuncAnimation(
         fig,
         update,
-        frames=MAX_STEPS,
+        frames=config.MAX_STEPS,
         interval=60,
         blit=False,
     )
@@ -288,14 +238,17 @@ def run_visual_simulation(env: EnvironmentGraph):
     plt.tight_layout()
     plt.show()
 
-    # After simulation, print summary & show metrics
+    # After simulation, print summary & metrics
     sim.summary()
-    if EVACUATION_MODE:
+    if config.EVACUATION_MODE:
         print_evacuation_report(sim)
     show_density_heatmap(sim)
     plot_travel_time_histogram(sim)
     plot_max_density_over_time(sim)
     plot_metrics_by_agent_type(sim)
+
+    # NEW: overlay results on the original floorplan (for raster mode)
+    overlay_results_on_floorplan(sim, env)
 
 
 def show_density_heatmap(sim: CrowdSimulation):
