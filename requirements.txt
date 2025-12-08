@@ -1,25 +1,17 @@
-# Core scientific stack
+# Core runtime
 numpy==1.26.4
-scipy==1.11.4
+networkx==3.2
+Pillow==10.1.0
+matplotlib==3.8.1
 
-# Visualization
-matplotlib==3.8.2
+# Optional loaders / DXF
+ezdxf==1.0.2
 
-# Image loading (PNG/JPG)
-Pillow==10.2.0
-
-# DXF CAD file parsing
-ezdxf==1.1.3
-
-# Multiprocessing helpers (optional but safe)
-tqdm==4.66.2
-
-# CLI parsing
-argparse-addons==0.12.0
-
-# JSON serialization / helpers
-orjson==3.9.15
-
-# (Optional) for saving MP4 animations
-imageio==2.33.1
-imageio-ffmpeg==0.4.9
+# Testing & tooling
+pytest==7.4.2
+pytest-cov==4.1.0
+black==24.3.0
+flake8==7.0.0
+mypy==1.5.1
+isort==5.12.0
+pre-commit==3.5.0

@@ -1,0 +1,104 @@
+# ----------------------------------------
+# Python bytecode / cache
+# ----------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+
+# C extensions / compiled stuff
+*.so
+*.dll
+*.dylib
+
+# ----------------------------------------
+# Virtual environments
+# ----------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# Conda envs (if any)
+*.conda_env
+
+# ----------------------------------------
+# Build / distribution
+# ----------------------------------------
+build/
+dist/
+*.egg-info/
+*.egg
+
+# ----------------------------------------
+# Test outputs
+# ----------------------------------------
+.coverage
+coverage.xml
+htmlcov/
+pytest_cache/
+.pytest_cache/
+
+# ----------------------------------------
+# Jupyter (if used later)
+# ----------------------------------------
+.ipynb_checkpoints/
+
+# ----------------------------------------
+# Logs
+# ----------------------------------------
+*.log
+
+# ----------------------------------------
+# Editor / IDE files
+# ----------------------------------------
+.vscode/
+.vscode/*
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ----------------------------------------
+# OS files
+# ----------------------------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------------------------
+# Project-specific: Simulation outputs
+# ----------------------------------------
+# PNG outputs (heatmaps, overlays, frames)
+*.png
+*.jpg
+*.jpeg
+
+# DXF / image floorplans (optional: uncomment if you don't want raw maps in git)
+# maps/examples/*.png
+# maps/examples/*.jpg
+# maps/examples/*.dxf
+
+# Animation frames / dumps
+output/
+results/
+exports/
+sim_output/
+*.mp4
+*.gif
+
+# JSON trial dumps
+trial_*.json
+*.json
+
+# ----------------------------------------
+# Pre-commit
+# ----------------------------------------
+.pre-commit-config.yaml
+.pre-commit-cache/
+
+# ----------------------------------------
+# Local config overrides
+# ----------------------------------------
+config_local.py
+.env
+*.env
