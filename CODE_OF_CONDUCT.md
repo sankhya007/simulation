@@ -1,185 +1,188 @@
-
-## 👋 Introduction
-
-Welcome to the **Crowd Simulation Project**.  
-This project supports research, education, and engineering around evacuation modeling and intelligent crowd movement.  
-To maintain a safe, collaborative, and professional community, all contributors and users must follow this **Code of Conduct**.
-
-This document ensures:
-
-- Respectful communication  
-- Safe collaboration  
-- Inclusivity  
-- Professional behaviour  
-- Clear rules for conflict resolution  
-
-By participating, you agree to uphold these standards.
+# Crowd Simulation Project – Code of Conduct
+### Creating a respectful, safe, and inclusive open-source community
 
 ---
 
-# 🧑‍🤝‍🧑 Our Pledge
+## 📌 Introduction
 
-We pledge to make participation in this project:
+The Crowd Simulation Project is built by a global community of developers, researchers, designers, students, and enthusiasts.  
+To maintain a safe, supportive, and harassment-free environment, all participants must follow this **Code of Conduct**.
 
-- **Open**
-- **Harassment-free**
-- **Safe**
-- **Constructive**
+This applies to:
 
-Regardless of:
+- GitHub repositories & discussions  
+- Issues, pull requests, and code reviews  
+- Project-related chats or forums  
+- Live demos, online meetings, workshops  
+- Any public or private interaction associated with the project  
 
-- Age
-- Body size
-- Disability
-- Ethnicity
-- Gender identity and expression
-- Level of experience
-- Nationality
-- Personal appearance
-- Race
-- Religion
-- Sexual identity/orientation
-- Technical background  
-
-We commit to a space where **everyone is welcome**.
+Our mission is to foster collaboration and innovation in a positive environment.
 
 ---
 
-# 🧭 Our Standards
+# 1. Our Pledge
 
-## 👍 Behaviours That Create a Positive Environment
+We pledge to make participation in this project a **respectful, inclusive, and harassment-free experience** for everyone, regardless of:
 
-- Being respectful and kind  
-- Offering constructive feedback  
-- Showing empathy to others  
-- Welcoming new contributors  
-- Sharing knowledge freely  
-- Demonstrating patience  
-- Helping others troubleshoot code  
-- Valuing diverse perspectives  
+- Age  
+- Body size or appearance  
+- Disability (visible or invisible)  
+- Ethnicity or nationality  
+- Gender identity or expression  
+- Level of experience or education  
+- Race or color  
+- Religion or belief system  
+- Sexual identity or orientation  
+- Socioeconomic background  
 
-## 👎 Unacceptable Behaviours
-
-The following behaviour is strictly prohibited:
-
-- Harassment or discrimination  
-- Personal attacks  
-- Doxxing or sharing private information  
-- Using demeaning or insulting language  
-- Dismissing others’ work without explanation  
-- Sexualized language or imagery  
-- Trolling or hostility  
-- Unsolicited direct messaging  
-- Intentionally derailing conversations  
-- Sabotaging project work  
-
-If in doubt, **be respectful**.
+We commit to welcoming diverse perspectives, encouraging curiosity, and supporting contributors of all skill levels.
 
 ---
 
-# 🛠 Responsibilities of Maintainers
+# 2. Our Standards
 
-Project maintainers **must**:
+## ✅ Positive behaviors we encourage
 
-- Enforce this Code of Conduct  
-- Remove inappropriate comments, commits, or issues  
-- Ban users who repeatedly violate rules  
-- Promote a welcoming and inclusive community  
+- Using respectful, inclusive, and professional language  
+- Being open to new ideas and constructive discussion  
+- Offering supportive, thoughtful feedback  
+- Helping newcomers learn and understand the project  
+- Giving credit where appropriate  
+- Asking questions when something is unclear  
+- Leading by example in both technical and interpersonal professionalism  
 
-They have the right to:
+Examples:
 
-- Block contributors violating guidelines  
-- Reject code that undermines project integrity  
-- Edit or remove harmful discussions  
-
-Maintainers must act **fairly and consistently**.
-
----
-
-# 📣 Reporting Issues
-
-If you witness or experience harassment or unacceptable behaviour:
-
-### Report it confidentially to:
-📧 **maintainer@example.com**  
-*(Replace with your actual project email)*
-
-Reports should include:
-
-- Description of the violation  
-- Links/screenshots  
-- Names of involved parties  
-- Your preferred method of follow-up  
-
-All reports will be kept **fully confidential**.  
-Retaliation against reporters is strictly prohibited.
+- “I disagree with this approach because…, maybe we can try…”  
+- “Good catch! I’ll refine that part.”  
+- “Thanks for the PR—here are some suggestions.”  
 
 ---
 
-# 🧾 Enforcement Guidelines
+## ❌ Unacceptable behaviors
 
-Maintainers will use the **severity ladder** below:
+Participants must **avoid** behavior including (but not limited to):
 
-### 1️⃣ **Warning**
-For minor or first-time violations.  
-Example: rude comment.
+### Harassment or Discrimination
+- Threats of violence  
+- Insults, personal attacks, or use of slurs  
+- Discriminatory or derogatory comments  
+- Persistent negative or aggressive communication  
 
-### 2️⃣ **Temporary Ban**
-Repeated or serious violations.  
-User is blocked for a cooling-off period.
+### Sexual Misconduct
+- Sexualized language, jokes, or imagery  
+- Unwelcome sexual attention  
 
-### 3️⃣ **Permanent Ban**
-For harassment, hate speech, threats, or repeated hostility.
+### Disruption or Hostility
+- Trolling or spamming  
+- Derailing discussions  
+- Repeatedly rejecting feedback without justification  
+- Intentionally frustrating collaboration  
 
-### 4️⃣ **Content Removal**
-Posts, commits, or discussions violating rules will be removed.
+### Privacy Violations
+- Sharing private information without consent  
+- Doxxing or leaking personal data  
 
-### 5️⃣ **Issue Locking**
-If discussions escalate, maintainers may lock threads.
+### Abuse of Authority
+- Intimidating others using seniority or status  
+- Rejecting contributions dismissively or unfairly  
 
 ---
 
-# 🌟 Scope
+# 3. Responsibilities of Maintainers
+
+Project maintainers are responsible for:
+
+- Clarifying acceptable behavior  
+- Enforcing this Code consistently and fairly  
+- Removing or editing unacceptable contributions  
+- Issuing warnings or bans when necessary  
+- Ensuring respectful collaboration in all spaces  
+
+Maintainers may remove comments, code, or contributions that violate guidelines.
+
+---
+
+# 4. Scope
 
 This Code of Conduct applies to:
 
-- GitHub issues & pull requests  
-- Project Discord / Team chats  
-- Live meetings or calls  
-- Private messages between contributors  
-- Any interaction related to this project  
+- All official project spaces (GitHub, chats, video calls, etc.)
+- Public interactions where contributors represent the project
+- Private communications relating to project work  
+- Conferences and community events where the project is presented  
+
+Representation includes use of:
+
+- The project name  
+- Official logos  
+- Public affiliation  
 
 ---
 
-# 🌈 Inclusivity & Accessibility
+# 5. Enforcement
 
-We aim to:
+Instances of unacceptable behavior can be reported to the project maintainers via:
 
-- Use simple, inclusive language  
-- Provide accessible documentation  
-- Encourage participation from underrepresented groups  
-- Support beginners in simulation, Python, CAD, and AI  
+📧 **Maintainer Contact:**  
+*your-email@example.com*
 
-Everyone deserves a chance to learn and contribute.
+Reports are handled confidentially.  
+All complaints will receive prompt and fair review.
 
----
-
-# 🤝 Acknowledgments
-
-This Code of Conduct is adapted and expanded from:
-
-- Contributor Covenant v2.1  
-- NumFOCUS guidelines  
-- CNCF Code of Conduct  
-
-We thank the global open-source community for setting positive standards.
+Anyone asked to stop harassing or inappropriate behavior is expected to comply immediately.
 
 ---
 
-# 🏁 Final Note
+# 6. Enforcement Guidelines
 
-This project exists for **education**, **research**, and **innovation**.  
-Let’s create a community where collaboration thrives, ideas grow, and people feel safe contributing.
+The project may use a tiered enforcement model:
 
-Thank you for being part of the project ❤️  
-"""
+### 1️⃣ Correction  
+**Behavior:** Minor tone issues or accidental misconduct  
+**Consequence:** Private reminder of Code of Conduct
+
+### 2️⃣ Warning  
+**Behavior:** Repeated or moderately harmful actions  
+**Consequence:** Formal warning; continued misbehavior escalates penalty  
+
+### 3️⃣ Temporary Ban  
+**Behavior:** Harassment, hostility, or persistent violations  
+**Consequence:** Temporary removal from issues/PRs/chats  
+
+### 4️⃣ Permanent Ban  
+**Behavior:** Threats, severe harassment, or sustained harmful conduct  
+**Consequence:** Permanent removal from community participation  
+
+---
+
+# 7. Community Values
+
+We prioritize:
+
+- Respect over dominance  
+- Collaboration over competition  
+- Learning over perfection  
+- Empathy over assumption  
+- Constructive dialogue over conflict  
+
+Disagreements on technical matters are welcome—**disrespect is not**.
+
+---
+
+# 8. Attribution
+
+This Code of Conduct is adapted from:
+
+- Contributor Covenant, version 2.1  
+- GitHub Community Guidelines  
+- Open Source Guides – Building Inclusive Communities  
+
+You may reuse or adapt this document for your own projects.
+
+---
+
+# 9. Final Statement
+
+By participating in this project, you agree to uphold this Code of Conduct.  
+Thank you for fostering a safe, innovative, and collaborative environment for everyone.

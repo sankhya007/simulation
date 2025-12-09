@@ -1,204 +1,174 @@
-# DEMO GUIDE — Crowd Simulation on Real Floorplans
+# Crowd Simulation Demo Guide
 
-This quick guide helps you **run the full system**, including:
-- Loading a PNG or DXF map  
-- Running visual simulation  
-- Running evacuation trials  
-- Detecting bottlenecks  
-- Generating heatmap overlays  
-- Saving results for reports  
-
-This document is beginner-friendly and focuses on **how to run the program**, not the internal code.
+This guide explains how to run demos, generate visual outputs, and explore the behavior of the Crowd Simulation Engine.
 
 ---
 
-# 🎯 1. Prerequisites
+## 🎮 1. Quick Visual Simulation
 
-Install Python packages:
-
-```bash
-pip install -r requirements.txt
-pip install ezdxf pillow matplotlib numpy
-```
-
-Make sure you have:
-
-- A **PNG/JPG floorplan** *or*
-- A **DXF floorplan** (AutoCAD → Save As → DXF R2010 recommended)
-
-Place them inside:
-
-```
-crowd/maps/examples/
-```
-
-Example:
-```
-crowd/maps/examples/mall.png
-crowd/maps/examples/mall.dxf
-```
-
----
-
-# 🗺 2. Choose Map Mode (PNG or DXF)
-
-In `config.py`, set:
-
-### For PNG / raster image:
-```python
-MAP_MODE = "raster"
-MAP_FILE = "maps/examples/mall.png"
-```
-
-### For DXF:
-```python
-MAP_MODE = "dxf"
-MAP_FILE = "maps/examples/mall.dxf"
-```
-
-You can switch anytime.
-
----
-
-# ▶️ 3. Run a Simple Visual Simulation
-
-Run:
+Run a real‑time visualization:
 
 ```bash
 python main.py visual normal
 ```
 
-You should see:
-
-- The map grid  
-- Agents moving  
-- Density heatmap  
-- Collisions updating  
-- Exits detected  
+This displays:
+- Agents moving across the map  
+- Leaders, followers, panic agents (color‑coded)  
+- Continuous or graph-based motion (based on config)  
+- Walls, exits, and obstacles  
 
 ---
 
-# 🚨 4. Run an Evacuation Simulation
+## 🧩 2. Motion Model Comparison Demo
+
+Run a side-by-side benchmark of the three main motion models:
 
 ```bash
-python main.py visual evacuation
+python demos/compare_motion_models.py
 ```
 
-What you’ll see:
+This will generate PNG files inside `demos/generated_images/`:
 
-- Agents rushing to exits  
-- High congestion at narrow corridors  
-- Paths dynamically adjusting  
+- `compare_graph.png`
+- `compare_social_force.png`
+- `compare_rvo.png`
+
+These images show clear differences in:
+- Path smoothness  
+- Collision avoidance  
+- Crowd pressure  
+- Agent spreading behavior  
 
 ---
 
-# 🔥 5. High-Density Stress Test
+## 🗺️ 3. DXF Floorplan Overlay Preview
+
+To visualize how DXF geometry is interpreted:
 
 ```bash
-python main.py visual high_density
+python tools/dxf_overlay_preview.py maps/my_map.dxf
 ```
 
-This loads many more agents to purposely produce congestion.
+Outputs a PNG overlay showing:
+- Wall detection  
+- Exit recognition  
+- Grid rasterization  
+- CAD → grid alignment  
+
+Useful for debugging layout or verifying map preprocessing.
 
 ---
 
-# 🚧 6. Blocked Path Scenario
+## 🖼️ 4. Raster (PNG/JPG) Floorplan Preview
+
+Preview how a raster floorplan converts into walls & exits:
 
 ```bash
-python main.py visual blocked
+python tools/preview_raster.py maps/floorplan.png
 ```
 
-This introduces new blocked nodes every few steps.  
-Useful for “disaster-mode” simulation.
+Shows:
+- Otsu-thresholded walls  
+- Exit color detection  
+- Resulting grid layout  
 
 ---
 
-# 🧪 7. Batch Experiments (Multiprocessing)
+## 🧭 5. Graph Structure Preview
 
-Run N trials in parallel to detect REAL bottlenecks:
+To visualize the navigation graph:
 
 ```bash
-python main.py batch --trials 10 --workers 6 --agents 300 --steps 1500 --target-percent 0.9 --out-dir results_mall
+python tools/preview_graph.py --type grid
+python tools/preview_graph.py --type centerline
+python tools/preview_graph.py --type hybrid
 ```
 
-This produces:
-
-- `results_mall/bottlenecks.csv`
-- `results_mall/overlay.png`
-- `results_mall/heatmap.png`
-- Trial logs (`trial_01.json` … `trial_10.json`)
+You will see:
+- Nodes and edges  
+- Weight differences  
+- Optional map overlay for context  
 
 ---
 
-# 📊 8. Understanding Results
+## 🔥 6. Panic Propagation Demo
 
-## Bottleneck CSV
-Contains columns:
+Force‑enable panic spread for demonstration:
 
-- `grid_x`, `grid_y`
-- `visit_count`
-- `dxf_x`, `dxf_y` (if DXF provided)
-- `rank` (“B1”, “B2”, etc.)
-
-## Overlay PNG
-Shows bottlenecks directly on the original floorplan image.  
-Red = severe congestion  
-Yellow = moderate  
-Green = exit positions  
-
-This is suitable for report screenshots.
-
----
-
-# 🧩 9. Troubleshooting
-
-### ❗ Map looks wrong / missing corridors
-Likely reasons:
-- Wall threshold too strict  
-- Wrong DXF layer names  
-- Too much downscaling  
-
-Try adjusting in `config.py`:
+Inside `config.py`:
 
 ```python
-RASTER_WALL_MAX_LUMA = 90
+PANIC_SPREAD_PROB = 1.0
+PANIC_SPREAD_RADIUS = 999
 ```
 
-Or edit DXF so walls are in a layer named:
+Then run:
 
-- `WALL`  
-- `WALLS`
-
-### ❗ Exits not detected  
-Add a thin line in a layer named:
-
-- `EXIT`
-- `EXIT_DOOR`
-
-### ❗ Simulation is too slow
-Increase downscale:
-
-```python
-RASTER_DOWNSCALE_FACTOR = 6 or 8
+```bash
+python test_motion_smoke.py
 ```
 
-Or reduce agent count.
+You should observe:
+- Panic seeded in one agent
+- Rapid propagation across the population  
 
 ---
 
-# 🧪 10. Recommended Demo Flow for Presentation
+## 📊 7. Bottleneck Detection Demo
 
-1. Show the **original PNG/DXF map**
-2. Show the **grid conversion**
-3. Run **normal simulation**
-4. Run **evacuation**
-5. Show **heatmap + overlay**
-6. Run a **batch** and show aggregated bottlenecks
-7. Present CSV → “top risk areas” in the building
+Running a simulation through `main.py` automatically generates CSV reports:
 
-This gives a perfect FYP demonstration.
+```bash
+python main.py normal
+```
+
+Find outputs in:
+
+```
+out_runX/*_bottlenecks.csv
+```
+
+Each file contains:
+- Node congestion counts  
+- Time‑step density peaks  
+- Bottleneck severity scores  
+
+Great for evacuation research & architectural analysis.
 
 ---
 
-# 🏁 End of DEMO  
-You’re now ready to demonstrate your system in class, presentations, or research!
+## 🎥 8. Recording Videos (Optional)
+
+Install video tools:
+
+```bash
+pip install matplotlib==3.7.0 ffmpeg-python
+```
+
+Modify `visualization.py` to save frames, then combine them using ffmpeg:
+
+```bash
+ffmpeg -framerate 30 -i frame_%04d.png -c:v libx264 demo.mp4
+```
+
+---
+
+## 🧪 9. Smoke Test / Quick Health Check
+
+Run a fast simulation to verify the entire system:
+
+```bash
+python test_motion_smoke.py
+```
+
+This prints:
+- Agent attribute samples  
+- Motion model sanity check  
+- Panic propagation behavior  
+- Summary metrics  
+
+---
+
+## End of DEMO Guide
+For additional help or examples, check the README or open an Issue on GitHub.

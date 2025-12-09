@@ -1,278 +1,316 @@
-# Crowd Simulation System – Floorplan-Aware Multi-Agent Evacuation Simulator
-
-This project is a **floorplan-aware crowd simulation engine** that supports:
-
-- Raster floorplans (PNG/JPG)
-- CAD floorplans (DXF)
-- Dynamic scenario loading
-- Evacuation modelling
-- Bottleneck detection
-- Batch simulation with multiprocessing
-- Heatmap + overlay visualisation on real maps
-- Exporting metrics, CSV reports, and annotated images
-
-The simulation builds a grid/graph from maps and runs multi-agent navigation using:
-- Shortest-path routing
-- Congestion-aware routing
-- Safe routing
-- Mixed strategies
+# Crowd Simulation Engine
+A complete modular crowd simulation framework supporting:
+- DXF & raster floorplans
+- Graph-based navigation
+- Social Force & RVO continuous motion models
+- Agent heterogeneity (speed, size, visibility, reaction time)
+- Panic propagation & group behavior
+- Real-time visualization, bottleneck detection, metrics export
 
 ---
 
-## 🚀 Features
+# 🏁 Quick Start
 
-### ✔ 1. Raster Floorplan Loader (PNG/JPG)
-- Converts floorplans into grid layout
-- Detects:
-  - Walls (black / dark grey)
-  - Walkable regions
-  - Doors
-  - Exits (green or user-defined)
-- Supports downsampling for performance
-- Produces a `layout_matrix` used by the `EnvironmentGraph`
-
-### ✔ 2. CAD Floorplan Loader (DXF)
-- Reads DXF via `ezdxf`
-- Recognizes:
-  - Wall layers
-  - Door layers
-  - Exit layers
-- Rasterizes DXF into grid
-- Returns:
-  - `layout_matrix`
-  - Metadata: bounding box, resolution, transformation mapping
-- Enables mapping bottleneck grid cells back to real DXF coordinates
-
----
-
-## ✔ 3. Simulation Engine
-Built around:
-- `EnvironmentGraph`
-- `CrowdSimulation`
-- `Agent` logic
-
-Supports:
-- Collision detection
-- Density tracking
-- Dynamic blocked nodes
-- Evacuation mode (nearest exit routing)
-- Multi-agent behaviours
-
-Each simulation step logs:
-- Agent movement
-- Node occupancy
-- Collisions
-- Evacuation times
-
----
-
-## ✔ 4. Scenarios System
-Selectable at runtime:
-
-| Scenario | Description |
-|---------|-------------|
-| `normal` | Normal dispersed navigation |
-| `high_density` | Many agents, stress-test the map |
-| `blocked` | Dynamic blocked paths |
-| `evacuation` | Emergency evacuation to nearest exits |
-| `floorplan_image_*` | Raster floorplan simulations |
-| `floorplan_dxf_*` | CAD floorplan simulations |
-
-You can extend scenarios easily through `scenarios.py`.
-
----
-
-## ✔ 5. Visualization
-Two layers:
-
-### **Grid-based visual simulation**
-Shows:
-- Agents (colored by type)
-- Exits
-- Blocked cells
-- Density heatmap
-- Congestion level
-
-### **Overlay visualization (NEW)**
-- Shows bottleneck heatmaps *directly on the original floorplan image*
-- Supports PNG and DXF (via rasterization)
-- Marks top-K bottlenecks using:
-  - Red circles
-  - Labels `B1`, `B2`, ...
-
----
-
-## ✔ 6. Bottleneck Detection
-Identifies high-density graph nodes using:
-
-- Total visit counts
-- Time-window average density
-- Edge congestion
-- Repeated batch trials aggregation
-
-Outputs:
-- A ranked list of bottleneck grid cells
-- (DXF mode) CSV mapping grid cells → real world CAD coordinates
-
----
-
-## ✔ 7. Batch Simulation (Multiprocessing)
-Run parallel experiments:
-
+## 1️⃣ Install Requirements
 ```bash
-python main.py batch --trials 7 --workers 6 --target-percent 0.95 --agents 300 --steps 1200
+pip install -r requirements.txt
 ```
 
-Batch runner:
-- Runs N trials in parallel
-- Gathers bottlenecks across runs
-- Saves:
-  - Metrics JSON
-  - CSV bottleneck coordinates
-  - Overlayed PNG heatmaps
-  - Serialized simulation dumps (if enabled)
+---
+
+# 🚀 RUNNING THE PROJECT (A → Z)
+
+Below is **EVERY command available** in the project.
 
 ---
 
-## ✔ 8. CLI Commands
+# 🅰 MAIN SIMULATION COMMANDS
 
-### List scenarios
+## ▶ Run a standard simulation (non-visual)
 ```bash
-python main.py list
+python main.py normal
 ```
 
-### Visual simulation
+## ▶ Run a visual simulation (live animation)
 ```bash
 python main.py visual normal
 ```
 
-### Run a batch of trials
+## ▶ Run with a specific navigation strategy
 ```bash
-python main.py batch --trials 5 --workers 4
+python main.py visual shortest
+python main.py visual congestion
+python main.py visual safe
 ```
 
-### Run evacuation with overlays
-```bash
-python main.py run evacuation --agents 300 --steps 1500 --overlay --out-dir results
+## ▶ Switch motion model inside config.py
+```python
+MOTION_MODEL = "graph"
+MOTION_MODEL = "social_force"
+MOTION_MODEL = "rvo"
 ```
 
 ---
 
-## 📁 Folder Structure
+# 🅱 DEMO COMMANDS
+
+## 🎮 Motion Model Comparison
+Produces images comparing:
+- Graph model
+- Social Force model
+- RVO model
+
+```bash
+python demos/compare_motion_models.py
+```
+
+---
+
+# 🅲 MAP PROCESSING COMMANDS
+
+## 🗺️ Preview DXF → Grid Conversion
+```bash
+python tools/dxf_overlay_preview.py maps/my_map.dxf
+```
+
+## 🖼️ Preview Raster (PNG/JPG) Map Conversion
+```bash
+python tools/preview_raster.py maps/floorplan.png
+```
+
+## 🔍 Preview Navigation Graph Structure
+```bash
+python tools/preview_graph.py --type grid
+python tools/preview_graph.py --type centerline
+python tools/preview_graph.py --type hybrid
+```
+
+---
+
+# 🅳 TESTING COMMANDS
+
+## 🧪 Test DXF Loader
+```bash
+pytest tests/test_dxf_loader.py -q
+```
+
+## 🧪 Test Raster Loader
+```bash
+pytest tests/test_raster_loader.py -q
+```
+
+## 🧪 Test Graph Builder
+```bash
+pytest tests/test_graph_builder.py -q
+```
+
+## 🧪 Test Simulation Step
+```bash
+pytest tests/test_simulation_step.py -q
+```
+
+## 🧪 Test Motion Models
+```bash
+pytest tests/test_motion_smoke.py -q
+```
+
+## 🧪 Run ALL tests
+```bash
+pytest -q
+```
+
+---
+
+# 🅴 UTILITY & DEBUG COMMANDS
+
+## 📏 Coordinate Mapping Repair Test
+```bash
+python tools/test_coordinate_mapping.py
+```
+
+## 🧱 Full System Check
+```bash
+python tools/full_system_check.py
+```
+
+## 🧭 Layer Mapping Helper for DXF Files
+```bash
+python tools/dxf_layer_mapper.py maps/my_map.dxf
+```
+
+## 🖼️ Preview graph with overlay
+```bash
+python tools/preview_graph.py --overlay maps/my_map.png
+```
+
+---
+
+# 🅵 OUTPUTS & ANALYSIS
+
+## 📊 Bottleneck CSV Export  
+After running:
+```bash
+python main.py normal
+```
+
+Check:
+```
+out_runX/*_bottlenecks.csv
+```
+
+## 📈 View agent visit density map
+```python
+from simulation import CrowdSimulation
+sim.get_density_matrix()
+```
+
+---
+
+# 🅶 CONFIGURATION OPTIONS
+
+Edit these in **config.py**:
+
+| Feature | Variable |
+|--------|----------|
+| Map file path | MAP_FILE |
+| Motion model | MOTION_MODEL |
+| Agent heterogeneity | AGENT_SPEED_MEAN, AGENT_RADIUS_MEAN, etc. |
+| Panic mechanics | PANIC_SPREAD_PROB, PANIC_SPREAD_RADIUS |
+| Group behaviors | GROUP_SIZE |
+| Dynamic events | DYNAMIC_BLOCKS_ENABLED, DYNAMIC_EXITS_ENABLED |
+| Visualization | VISUAL_FRAME_DELAY |
+
+---
+
+# 🅷 PROJECT STRUCTURE
 
 ```
-crowd/
+crowd-simulation/
 │
-├── main.py
-├── config.py
-├── scenarios.py
+├── agent.py
 ├── simulation.py
 ├── environment.py
-├── agent.py
-├── analysis.py
+├── motion_models.py
+├── config.py
+├── main.py
+│
+├── README.md
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── DEMO.md
+├── LICENSE
+├── .gitignore
 │
 ├── maps/
 │   ├── __init__.py
 │   ├── map_loader.py
 │   ├── map_meta.py
-│   ├── raster_loader.py
 │   ├── dxf_loader.py
+│   ├── raster_loader.py
 │   ├── floorplan_image_loader.py
+│   │
 │   ├── examples/
-│   │   ├── example_floorplan.png
-│   │   └── call_center_pt2.dxf
-│   └── misc/
-│
-├── visualization.py       # patched run_visual_simulation
+│   │   ├── example1.png
+│   │   ├── example2.png
+│   │   ├── example_map.dxf
+│   │   └── README.md
+│   │
+│   └── custom_maps/
+│       └── README.md
 │
 ├── tools/
-│   ├── preview_raster.py
+│   ├── preview_graph.py
 │   ├── dxf_overlay_preview.py
-│   ├── export_graph.py (optional)
-│   ├── map_debug.py (optional)
-│   └── ...
+│   ├── preview_raster.py
+│   ├── preview_graph.py
+│   ├── full_system_check.py
+│   ├── dxf_layer_mapper.py
+│   └── test_coordinate_mapping.py
+│
+├── visualization.py
+│
+├── demos/
+│   ├── compare_motion_models.py
+│   ├── example_run.py
+│   └── generated_images/
+│       ├── compare_graph.png
+│       ├── compare_sf.png
+│       └── compare_rvo.png
 │
 ├── tests/
-│   ├── test_dxf_loader.py
-│   ├── test_raster_loader.py
+│   ├── __init__.py
+│   ├── conftest.py
 │   ├── test_simulation_step.py
-│   ├── fixtures/
-│   │   └── ...
-│   └── ...
+│   ├── test_coordinate_mapping.py
+│   ├── test_graph_builder.py
+│   ├── test_raster_loader.py
+│   ├── test_dxf_loader.py
+│   ├── test_cad_coords.py
+│   ├── test_motion_smoke.py
+│   ├── test_motion_models.py
+│   └── test_agent_behavior.py   (optional future test)
 │
-├── requirements.txt
-├── README.md
-├── DEMO.md
-├── .gitignore
+├── outputs/
+│   ├── logs/
+│   ├── density_maps/
+│   ├── bottleneck_reports/
+│   └── simulation_runs/
+│       ├── run_001/
+│       │   ├── frames/
+│       │   ├── density.csv
+│       │   ├── bottlenecks.csv
+│       │   └── summary.json
+│       └── run_002/
 │
-└── (NO __pycache__/ directories should exist)
-
+├── data/
+│   ├── training_data/      (if ML is added later)
+│   └── exported_maps/
+│
+└── docs/
+    ├── architecture.md
+    ├── design_principles.md
+    ├── roadmap.md
+    ├── api_reference/
+    │   ├── simulation.md
+    │   ├── agent.md
+    │   ├── environment.md
+    │   └── motion_models.md
+    └── images/
 ```
 
 ---
 
-## 🛠 Requirements
+# 🅸 CONTRIBUTING
 
-Install dependencies:
+See:
+```
+CONTRIBUTING.md
+```
+
+---
+
+# 🅹 LICENSE
+MIT License (or add your own)
+
+---
+
+# 🎉 You're Ready!
+
+Run any simulation:
 ```bash
-pip install -r requirements.txt
+python main.py visual normal
 ```
 
-DXF support:
+Generate demos:
 ```bash
-pip install ezdxf
+python demos/compare_motion_models.py
 ```
 
-Image processing:
+Debug maps:
 ```bash
-pip install pillow
+python tools/preview_graph.py --type grid
 ```
 
----
+To report issues or request features, open a GitHub issue.
 
-## 🧪 Testing Example
-
-### PNG Floorplan
-```bash
-MAP_MODE="raster"
-MAP_FILE="maps/examples/floor.png"
-
-python main.py visual floorplan_image_normal
-```
-
-### DXF Floorplan
-```bash
-MAP_MODE="dxf"
-MAP_FILE="maps/examples/mall.dxf"
-
-python main.py visual floorplan_dxf_evac
-```
-
----
-
-## 📊 Outputs
-
-- Density heatmaps
-- Bottleneck overlays
-- Evacuation KPIs (50%, 80%, 90%)
-- CSV bottleneck coordinate mapping
-- JSON serialized trial data
-
----
-
-## 📘 Future Work
-
-- 3D multi-level support
-- Fire propagation / hazard modelling
-- Calibration with real-world evacuation videos
-- Multi-floor connectivity (stairs / elevators)
-
----
-
-## 🤝 Contributions
-Feel free to modify scenarios, add new loaders, or upgrade the visual overlays.
-
----
-
-## 📝 License
-MIT License unless changed by your institution.
+Happy simulating ❤️

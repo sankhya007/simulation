@@ -1,114 +1,147 @@
-# ----------------------------------------
-# Python bytecode / cache
-# ----------------------------------------
+# ============================================
+# Python & Environment
+# ============================================
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.pdb
-
-# C extensions / compiled stuff
 *.so
-*.dll
-*.dylib
 
-# ----------------------------------------
 # Virtual environments
-# ----------------------------------------
 .venv/
 venv/
 env/
 ENV/
+python_env/
 
-# Conda envs (if any)
-*.conda_env
-
-# ----------------------------------------
 # Build / distribution
-# ----------------------------------------
 build/
 dist/
 *.egg-info/
+.eggs/
 *.egg
+pip-wheel-metadata/
 
-# ----------------------------------------
-# Test outputs
-# ----------------------------------------
-.coverage
-coverage.xml
-htmlcov/
-pytest_cache/
-.pytest_cache/
+# Bytecode cache
+*.pyc
+*.pkl
 
-# ----------------------------------------
-# Jupyter (if used later)
-# ----------------------------------------
-.ipynb_checkpoints/
-
-# ----------------------------------------
-# Logs
-# ----------------------------------------
-*.log
-
-# ----------------------------------------
-# Editor / IDE files
-# ----------------------------------------
-.vscode/
-.vscode/*
-.idea/
-*.sublime-project
-*.sublime-workspace
-
-# ----------------------------------------
-# OS files
-# ----------------------------------------
+# ============================================
+# OS / Editor Files
+# ============================================
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# ----------------------------------------
-# Project-specific: Simulation outputs
-# ----------------------------------------
-# PNG outputs (heatmaps, overlays, frames)
-*.png
-*.jpg
-*.jpeg
+# IDE / Editor folders
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# DXF / image floorplans (optional: uncomment if you don't want raw maps in git)
-# maps/examples/*.png
-# maps/examples/*.jpg
-# maps/examples/*.dxf
+# ============================================
+# Logs / Temp Files
+# ============================================
+*.log
+*.tmp
+*.bak
+*.old
 
-# Animation frames / dumps
-output/
+# Caches
+.cache/
+.mypy_cache/
+.pytest_cache/
+coverage.xml
+htmlcov/
+.cache/
+.tox/
+.nox/
+
+# ============================================
+# Project-Specific Ignored Files
+# ============================================
+
+# Simulation outputs
+out/
+out_*/
+outputs/
 results/
 exports/
-sim_output/
+simulation_runs/
+
+# CSV bottleneck reports
+*_bottlenecks.csv
+
+# Generated density heatmaps
+density_maps/
+*.heatmap.png
+
+# Preview images
+*.preview.png
+*.overlay.png
+*.graph.png
+*.demo.png
+
+# DXF intermediate files
+*.layers.json
+*.parsed.json
+
+# Raster preprocessing previews
+tmp/
+temp/
+*.tif
+*.tiff
+
+# Map caches
+maps/generated/
+maps/cache/
+maps/tmp/
+
+# User custom maps (optional)
+maps/custom_maps/*
+!maps/custom_maps/README.md
+
+# ============================================
+# Visualization / Demo Artifacts
+# ============================================
+demos/generated_images/
 *.mp4
-*.gif
+*.avi
+*.mov
 
-# JSON trial dumps
-trial_*.json
-*.json
+# Matplotlib temporary files
+*.matplotlib-cache
 
-# ----------------------------------------
-# Pre-commit
-# ----------------------------------------
-.pre-commit-config.yaml
-.pre-commit-cache/
+# ============================================
+# Jupyter Notebooks
+# ============================================
+.ipynb_checkpoints/
+*.ipynb
 
-# ----------------------------------------
-# Local config overrides
-# ----------------------------------------
-config_local.py
+# ============================================
+# Secrets / Environment files
+# ============================================
 .env
-*.env
+.env.*
+*.secret
+*.token
+*.credentials
 
+# ============================================
+# Compiled experiments or binaries
+# ============================================
+*.exe
+*.dll
+*.bin
+*.out
 
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.DS_Store
-.env
-.venv
-*.egg-info/
+# ============================================
+# Backup files
+# ============================================
+*~
+*.bak
+*.orig
+
+# ============================================
+# End of .gitignore
+# ============================================

@@ -1,185 +1,248 @@
-# Contributing to the Crowd Simulation Project  
-A clear, beginner‑friendly guide for contributing to the system.
+# Contributing to the Crowd Simulation Project
 
-Thank you for your interest in contributing!  
-Whether you’re fixing bugs, improving the simulation engine, adding new map loaders, or helping with documentation, **all contributions are welcome**.
+Thank you for your interest in contributing!
+This project aims to build a powerful, modular, and realistic crowd simulation engine supporting:
 
-This guide explains **how to contribute**, **coding standards**, and **the workflow** used in this project.
+- Pedestrian dynamics
+- DXF & raster-based floorplans
+- Graph & continuous motion models (Social Force, RVO)
+- Agent heterogeneity
+- Panic propagation
+- Visualization & analytics tools
 
----
+We welcome contributions from developers, researchers, students, and enthusiasts of all backgrounds.
 
-# 🌱 Ways You Can Contribute
+## Table of Contents
+1. How to Ask Questions
+2. Code of Conduct
+3. Development Environment Setup
+4. Project Structure
+5. How to Contribute
+6. Coding Standards
+7. Pull Request Process
+8. Writing & Running Tests
+9. Reporting Bugs
+10. Suggesting Features
+11. Community & Recognition
 
-### 🐛 1. Report Bugs
-If something doesn’t work as expected:
-- Open a GitHub issue
-- Include logs, screenshots, and steps to reproduce
+## How to Ask Questions
+If you're unsure about anything:
+- Open a GitHub Discussion
+- Or open an Issue labeled "question"
+- Or contact maintainers directly (if available)
 
-### 🧠 2. Suggest Enhancements
-Ideas for:
-- Better visualization
-- Faster simulation
-- Improved agents
-- CAD/image processing upgrades
-- New scenarios
+No question is too small — we want this project to be accessible for newcomers.
 
-### 🧪 3. Add Features
-Good first features:
-- Better bottle‑neck detection algorithms
-- More evacuation metrics
-- Additional raster or DXF formats
-- Multi‑floor support (stairs, elevators)
-- Exporting result videos
+## Code of Conduct
+By participating in this project, you agree to uphold our
+- CODE_OF_CONDUCT.md
 
-### ✍️ 4. Improve Documentation
-You can help by improving:
-- README.md
-- DEMO.md
-- tutorials
-- inline code comments
+Please read it carefully before contributing.
 
-### 🎨 5. Provide Better Demo Maps
-Provide:
-- Clean PNG mall layouts  
-- DXF files with proper WALL/EXIT layers  
-- Classroom, auditorium, campus maps  
+## Development Environment Setup
 
----
-
-# 🔧 Project Structure (Important!)
-
-```
-crowd/
-│── main.py                    # CLI, batch runner, visual runner
-│── simulation.py              # Agent engine + timestep loop
-│── environment.py             # Grid/graph building
-│── agent.py                   # Agent behavior logic
-│── maps/
-│     ├── raster_loader.py     # PNG/JPG → grid
-│     ├── dxf_loader.py        # DXF → grid
-│     ├── map_loader.py        # Routing for map modes
-│── analysis.py                # Metrics, KPIs, bottlenecks, overlays
-│── scenarios.py               # Scenario presets (normal, high_density, etc.)
-│── visualization.py           # Live animation + overlays
-│── README.md / DEMO.md        # Docs for users
-```
-
----
-
-# 🧵 Workflow for Contributing
-
-## 1️⃣ Fork the Repository
-```
-Click "Fork" on GitHub
-```
-
-## 2️⃣ Clone Your Fork
+### 1. Clone the repository
 ```bash
-git clone https://github.com/yourname/crowd-simulation.git
+git clone https://github.com/<yourname>/crowd-simulation.git
 cd crowd-simulation
 ```
 
-## 3️⃣ Create a Branch
+### 2. Create a virtual environment
 ```bash
-git checkout -b feature/my-new-feature
+python -m venv .venv
+# Activate:
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 ```
 
-Examples:
-```
-feature/add-dxf-overlay
-fix/raster-threshold
-docs/improve-readme
-```
-
-## 4️⃣ Make Your Changes
-Follow coding standards below.
-
-## 5️⃣ Run Tests
-- Basic simulation (`normal`)
-- Raster loader test
-- DXF loader test
-- Evacuation scenario
-- Batch runs (if modified)
-
-## 6️⃣ Commit
+### 3. Install dependencies
 ```bash
-git add .
-git commit -m "Add new DXF overlay rendering"
+pip install -r requirements.txt
 ```
 
-## 7️⃣ Push & Create Pull Request
+### 4. Run the test suite
 ```bash
-git push origin feature/my-new-feature
+pytest -q
 ```
 
-Submit a Pull Request describing:
-- What you added
-- Why it is useful
-- How to test
+## Project Structure
+```
+crowd-simulation/
+│
+├── agent.py
+├── simulation.py
+├── environment.py
+├── motion_models.py
+├── config.py
+├── main.py
+│
+├── README.md
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── DEMO.md
+├── LICENSE
+├── .gitignore
+│
+├── maps/
+│   ├── __init__.py
+│   ├── map_loader.py
+│   ├── map_meta.py
+│   ├── dxf_loader.py
+│   ├── raster_loader.py
+│   ├── floorplan_image_loader.py
+│   │
+│   ├── examples/
+│   │   ├── example1.png
+│   │   ├── example2.png
+│   │   ├── example_map.dxf
+│   │   └── README.md
+│   │
+│   └── custom_maps/
+│       └── README.md
+│
+├── tools/
+│   ├── preview_graph.py
+│   ├── dxf_overlay_preview.py
+│   ├── preview_raster.py
+│   ├── preview_graph.py
+│   ├── full_system_check.py
+│   ├── dxf_layer_mapper.py
+│   └── test_coordinate_mapping.py
+│
+├── visualization.py
+│
+├── demos/
+│   ├── compare_motion_models.py
+│   ├── example_run.py
+│   └── generated_images/
+│       ├── compare_graph.png
+│       ├── compare_sf.png
+│       └── compare_rvo.png
+│
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_simulation_step.py
+│   ├── test_coordinate_mapping.py
+│   ├── test_graph_builder.py
+│   ├── test_raster_loader.py
+│   ├── test_dxf_loader.py
+│   ├── test_cad_coords.py
+│   ├── test_motion_smoke.py
+│   ├── test_motion_models.py
+│   └── test_agent_behavior.py   (optional future test)
+│
+├── outputs/
+│   ├── logs/
+│   ├── density_maps/
+│   ├── bottleneck_reports/
+│   └── simulation_runs/
+│       ├── run_001/
+│       │   ├── frames/
+│       │   ├── density.csv
+│       │   ├── bottlenecks.csv
+│       │   └── summary.json
+│       └── run_002/
+│
+├── data/
+│   ├── training_data/      (if ML is added later)
+│   └── exported_maps/
+│
+└── docs/
+    ├── architecture.md
+    ├── design_principles.md
+    ├── roadmap.md
+    ├── api_reference/
+    │   ├── simulation.md
+    │   ├── agent.md
+    │   ├── environment.md
+    │   └── motion_models.md
+    └── images/
 
----
+```
 
-# 🧩 Coding Guidelines
+## How to Contribute
+### Code contributions
+- Fix bugs
+- Add new features
+- Improve motion models
+- Add support for new map formats
+- Optimize simulation speed
+- Improve agent behavior/AI
 
-### ✔ Python Style
-- Follow **PEP‑8**
-- Use **type hints** everywhere
+### Documentation
+- Improve README / tutorials
+- Add diagrams or explanations
+- Extend DEMO.md with screenshots
+
+### Testing
+- Add tests for new or existing modules
+
+### Research contributions
+- Implement theoretical models (e.g., Social Force variants, panic models)
+- Add benchmarking tools or metrics
+
+### Community support
+- Answer questions
+- Help maintain discussions
+- Provide feedback on PRs
+
+## Coding Standards
+- Use PEP 8 compliant code
+- Use type hints everywhere possible
 - Keep functions short and readable
-- Comment tricky algorithms (DXF geometry, heatmaps, etc.)
+- Avoid hardcoded values (use config.py)
+- Document complex logic clearly
 
-### ✔ Simulation Components
-- Do not hard‑code dimensions; always use config values
-- Keep loaders pure (NO side effects)
-- Avoid heavy work in visualization loop
-- Ensure new scenarios integrate through `scenarios.py`
+## Pull Request Process
+### 1. Create a feature branch
+```bash
+git checkout -b feature/<short-description>
+```
 
-### ✔ DXF / Raster Processing
-- Keep thresholds in `config.py`
-- Test on several maps
-- Use metadata for accurate overlays
+### 2. Write clear, documented code
 
----
+### 3. Ensure tests pass
+```bash
+pytest -q
+```
 
-# 📦 Pull Request Requirements
+### 4. Open a PR
+Your pull request should include:
+- A descriptive title
+- Summary of changes
+- Screenshots or animations if visual
+- Any performance considerations
+- List of new test cases
 
-Your PR should include:
-- Description of changes
-- Before/after behavior if visual
-- Performance impact (if any)
-- Updated docs if feature changes UX
+## Writing & Running Tests
+Run the full suite:
+```bash
+pytest
+```
 
----
+## Reporting Bugs
+Open a GitHub Issue with:
+- Clear title
+- Steps to reproduce
+- Expected vs actual behavior
+- Screenshots (if visual)
+- Relevant config values
+- OS + Python version
+- Logs or traceback
 
-# 🤖 Good First Issues
+## Suggesting Features
+Include:
+- Use case
+- Why this feature matters
+- Potential approach
+- References (papers, models, links)
 
-New contributors can work on:
-- Improving wall/door detection for PNG maps
-- Adding new map overlays
-- Optimizing crowded simulations
-- Adding evacuation KPIs
-- Creating map preview mode
-- Improving scenario presets
+## Community & Recognition
+We appreciate every contributor — from beginners to experts.
+All contributors will be listed in the README under **Contributors**.
 
----
-
-# 🙏 Contributor Expectations
-
-- Be kind and respectful  
-- Follow the Code of Conduct  
-- Help reviewers understand your changes  
-- Be patient with review cycles  
-
----
-
-# 💬 Need Help?
-
-Open a GitHub issue or start a discussion—maintainers and contributors will help.
-
----
-
-# ❤️ Thank You
-
-Your contributions help build a powerful **research‑grade** crowd simulation engine that supports PNG/DXF maps, evacuation analytics, and bottleneck detection.
-
-We’re glad to have you here!
-
+## Contact
+Maintainer Email: add-your-email@example.com
