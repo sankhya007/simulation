@@ -1,21 +1,17 @@
 # environment.py
 
 import random
-from typing import List, Sequence, Optional, Dict, Tuple
+from typing import List, Sequence, Optional, Dict, Tuple, Any
 
 import networkx as nx
 
 from config import EDGE_BASE_CAPACITY
 from maps.map_meta import MapMeta
 from typing import Optional
-from typing import Any
 import numpy as np
 
 Node = Tuple[int, int]
 LayoutMatrix = Sequence[Sequence[str]]
-
-# Removed stray undefined code: node/world coordinates should be set when nodes are created
-# (see _build_open_grid and _build_from_layout which set node "pos" attributes).
 
 
 class EnvironmentGraph:
@@ -24,7 +20,8 @@ class EnvironmentGraph:
 
     Nodes: (x, y) integer positions
         Attributes:
-            - pos: (x, y) float coordinates for drawing
+            - pos: (x, y) float coordinates for drawing (world coords)
+            - cad_pos: (cad_x, cad_y) real CAD coordinates if available
             - accessibility: "open" | "blocked" | "exit"
             - type: "corridor" | "wall" | "exit" | ...
 
@@ -105,6 +102,82 @@ class EnvironmentGraph:
                 self.width = int(width)
                 self.height = int(height)
                 self._build_open_grid(mapmeta=mapmeta)
+
+    # ----- helper to create nodes in a consistent way -----
+    def _add_node_with_meta(
+        self,
+        node: Node,
+        gx: int,
+        gy: int,
+        accessibility: str = "open",
+        node_type: str = "corridor",
+        pos: Optional[Tuple[float, float]] = None,
+    ) -> None:
+        """
+        Add node with consistent attributes:
+          - pos: (world_x, world_y) (if not provided, computed from self._mapmeta.transform or gx,gy)
+          - cad_pos: (cad_x, cad_y) if MapMeta provides grid_to_cad mapping (extras or attributes)
+          - accessibility, type preserved
+
+        Usage: replace self.graph.add_node((x,y), pos=..., accessibility=..., type=...) with
+               self._add_node_with_meta((x,y), x, y, accessibility=..., node_type=..., pos=...)
+        """
+        # compute pos using provided pos, else mapmeta.transform, else grid coords
+        if pos is None:
+            if getattr(self, "_mapmeta", None) is not None and callable(getattr(self._mapmeta, "transform", None)):
+                try:
+                    wx, wy = self._mapmeta.transform(int(gx), int(gy))
+                    pos = (float(wx), float(wy))
+                except Exception:
+                    pos = (float(gx), float(gy))
+            else:
+                pos = (float(gx), float(gy))
+
+        # compute cad_pos (optional). Try several known locations where loader might have stored the mapping:
+        cad_pos = (None, None)
+        try:
+            mm = getattr(self, "_mapmeta", None)
+            if mm is not None:
+                # 1) MapMeta may expose a callable attribute grid_to_cad
+                grid_to_cad = getattr(mm, "grid_to_cad", None)
+                if callable(grid_to_cad):
+                    cx, cy = grid_to_cad(int(gx), int(gy))
+                    cad_pos = (float(cx), float(cy))
+                else:
+                    # 2) loader may have placed it under extras keys: 'grid_to_cad' or 'grid_to_cad_transform'
+                    extras = getattr(mm, "extras", {}) or {}
+                    for key in ("grid_to_cad", "grid_to_cad_transform", "grid_to_cad_callable"):
+                        candidate = extras.get(key)
+                        if callable(candidate):
+                            cx, cy = candidate(int(gx), int(gy))
+                            cad_pos = (float(cx), float(cy))
+                            break
+                    else:
+                        # 3) some loaders provide 'bbox' + grid dims only; compute consistent CAD center if possible
+                        bbox = extras.get("bbox") or getattr(mm, "bbox", None)
+                        gs = extras.get("grid_shape") or getattr(mm, "grid_shape", None)
+                        if bbox and gs:
+                            try:
+                                minx, maxx, miny, maxy = bbox
+                                gw, gh = int(gs[0]), int(gs[1])
+                                cw = (maxx - minx) / gw if gw else 1.0
+                                ch = (maxy - miny) / gh if gh else 1.0
+                                cx = minx + (gx + 0.5) * cw
+                                cy = miny + (gy + 0.5) * ch
+                                cad_pos = (float(cx), float(cy))
+                            except Exception:
+                                pass
+        except Exception:
+            cad_pos = (None, None)
+
+        # finally add node
+        self.graph.add_node(
+            node,
+            pos=pos,
+            cad_pos=cad_pos,
+            accessibility=accessibility,
+            type=node_type,
+        )
 
     # ------------------------------------------------------------------
     # PUBLIC UTILITIES (NODES)
@@ -282,18 +355,12 @@ class EnvironmentGraph:
         for y in range(self.height):
             for x in range(self.width):
                 if mapmeta is not None:
-                    # mapmeta.transform expects grid indices (gx,gy) -> (real_x, real_y)
                     wx, wy = mapmeta.transform(x, y)
                     pos = (float(wx), float(wy))
                 else:
                     pos = (float(x), float(y))
 
-                self.graph.add_node(
-                    (x, y),
-                    pos=pos,
-                    accessibility="open",
-                    type="corridor",
-                )
+                self._add_node_with_meta((x, y), x, y, accessibility="open", node_type="corridor", pos=pos)
 
         for y in range(self.height):
             for x in range(self.width):
@@ -340,12 +407,7 @@ class EnvironmentGraph:
                 else:
                     pos = (float(x), float(y))
 
-                self.graph.add_node(
-                    (x, y),
-                    pos=pos,
-                    accessibility=accessibility,
-                    type=node_type,
-                )
+                self._add_node_with_meta((x, y), x, y, accessibility=accessibility, node_type=node_type, pos=pos)
 
         for y in range(self.height):
             for x in range(self.width):
@@ -414,116 +476,6 @@ class EnvironmentGraph:
     # ============================================================
     #  NEW GRAPH BUILDERS (CENTERLINE + HYBRID)
     # ============================================================
-
-    def _build_centerline_graph(self, mapmeta):
-        """
-        Build a centerline / skeleton graph from the raster layout.
-        Requires scikit-image.
-        """
-        try:
-            from skimage.morphology import skeletonize
-            from skimage import img_as_bool
-        except Exception:
-            raise ImportError(
-                "scikit-image is required for graph_type='centerline'. "
-                "Install with: python -m pip install scikit-image scipy"
-            )
-
-        layout = mapmeta.layout
-        H = len(layout)
-        W = len(layout[0])
-
-        import numpy as np
-
-        # Build walkable mask
-        mask = np.zeros((H, W), dtype=bool)
-        for y in range(H):
-            for x in range(W):
-                c = layout[y][x]
-                if c in (".", "0", "E"):  # walkable or exit
-                    mask[y, x] = True
-
-        # Skeleton
-        skel = skeletonize(mask)
-
-        self.width = W
-        self.height = H
-
-        # Add nodes at skeleton pixels
-        for y in range(H):
-            for x in range(W):
-                if not skel[y, x]:
-                    continue
-
-                wx, wy = mapmeta.transform(x, y)
-                self.graph.add_node(
-                    (x, y),
-                    pos=(wx, wy),
-                    accessibility="open",
-                    type="corridor",
-                )
-
-        # 8-connected graph edges
-        dirs = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
-        for x, y in list(self.graph.nodes()):
-            for dx, dy in dirs:
-                nx, ny = x + dx, y + dy
-                if (nx, ny) in self.graph:
-                    self._add_edge_with_defaults((x, y), (nx, ny))
-
-        print(f"[EnvironmentGraph] centerline graph built: {self.graph.number_of_nodes()} nodes")
-
-    def _build_hybrid_graph(self, mapmeta, cell_size=0.5):
-        """
-        Hybrid graph:
-          - Start with centerline skeleton
-          - Add sparse nodes in open areas
-        """
-        # Start by building the centerline
-        try:
-            self._build_centerline_graph(mapmeta)
-        except ImportError:
-            print("[EnvironmentGraph] scikit-image missing: hybrid → fallback to grid.")
-            self._build_from_layout(mapmeta.extras["layout"], mapmeta=mapmeta)
-            return
-
-        layout = mapmeta.layout
-        H = len(layout)
-        W = len(layout[0])
-        import numpy as np
-
-        # How densely to sample extra nodes
-        step = max(1, int(1 / cell_size))
-
-        # Add sampled open-space nodes
-        for y in range(0, H, step):
-            for x in range(0, W, step):
-                c = layout[y][x]
-                if c not in (".", "0", "E"):
-                    continue
-                if (x, y) in self.graph:
-                    continue
-
-                wx, wy = mapmeta.transform(x, y)
-                self.graph.add_node(
-                    (x, y),
-                    pos=(wx, wy),
-                    accessibility="open",
-                    type="corridor",
-                )
-
-        # Connect neighbors
-        for x, y in list(self.graph.nodes()):
-            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                nx, ny = x + dx, y + dy
-                if (nx, ny) in self.graph:
-                    self._add_edge_with_defaults((x, y), (nx, ny))
-
-        print(f"[EnvironmentGraph] hybrid graph built: {self.graph.number_of_nodes()} nodes")
-
-    # ----------------------------
-    # New graph builders (resolution / centerline / hybrid)
-    # ----------------------------
 
     def _compute_raster_from_layout(self, mapmeta: MapMeta, gw: int, gh: int):
         """
@@ -598,9 +550,7 @@ class EnvironmentGraph:
                     # world pos from mapmeta.transform
                     wx, wy = mapmeta.transform(x, y)
                     node = (int(x), int(y))
-                    self.graph.add_node(
-                        node, pos=(float(wx), float(wy)), accessibility="open", type="corridor"
-                    )
+                    self._add_node_with_meta(node, x, y, accessibility="open", node_type="corridor", pos=(float(wx), float(wy)))
                     node_idxs[(x, y)] = node
 
         # Connect adjacent skeleton pixels (8-neighbour)
@@ -611,9 +561,6 @@ class EnvironmentGraph:
                 v = (x + dx, y + dy)
                 if v in node_idxs:
                     self._add_edge_with_defaults(u, v)
-
-        # Mark exits if they align with skeleton (optional: detect near exit layers in mapmeta.extras)
-        # leave walls/blocked nodes out — centerline nodes are inherently walkable
 
         # store metadata
         self.width = gw
@@ -654,9 +601,7 @@ class EnvironmentGraph:
                 if dist[y, x] <= narrow_threshold or skeleton[y, x]:
                     wx, wy = mapmeta.transform(x, y)
                     node = (x, y)
-                    self.graph.add_node(
-                        node, pos=(float(wx), float(wy)), accessibility="open", type="corridor"
-                    )
+                    self._add_node_with_meta(node, x, y, accessibility="open", node_type="corridor", pos=(float(wx), float(wy)))
 
         # connect neighbours for nodes that exist
         for x, y in list(self.graph.nodes()):
@@ -713,6 +658,41 @@ class EnvironmentGraph:
         self.width = cols
         self.height = rows
 
+    def get_cad_pos(self, node: Node) -> Tuple[Optional[float], Optional[float]]:
+        """
+        Return CAD coordinates for a node if stored (cad_pos). If not available, try to compute
+        from mapmeta (if mapmeta has grid_to_cad mapping).
+        """
+        data = self.graph.nodes.get(node, {})
+        cad = data.get("cad_pos")
+        if cad and cad != (None, None):
+            return cad
+
+        # attempt to derive via mapmeta
+        mm = getattr(self, "_mapmeta", None)
+        if mm:
+            try:
+                # try mm.grid_to_cad attribute
+                grid_to_cad = getattr(mm, "grid_to_cad", None)
+                if callable(grid_to_cad):
+                    x, y = grid_to_cad(int(node[0]), int(node[1]))
+                    return (float(x), float(y))
+                # try extras keys
+                extras = getattr(mm, "extras", {}) or {}
+                for key in ("grid_to_cad", "grid_to_cad_transform", "grid_to_cad_callable"):
+                    candidate = extras.get(key)
+                    if callable(candidate):
+                        x, y = candidate(int(node[0]), int(node[1]))
+                        return (float(x), float(y))
+                # fallback to mapmeta.transform (which maps grid -> world) if that corresponds to CAD already
+                if callable(getattr(mm, "transform", None)):
+                    wx, wy = mm.transform(int(node[0]), int(node[1]))
+                    return (float(wx), float(wy))
+            except Exception:
+                pass
+
+        return (None, None)
+
 
 def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
     """
@@ -726,35 +706,67 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
     and then sets world coordinates on the node as attributes:
       node.world_x, node.world_y
     or on the node data dict if node is a dict: node['world_x'], node['world_y'].
+    Additionally, if mapmeta provides a cad mapping, set cad_x/cad_y or cad_pos on nodes.
     """
     if mapmeta is None:
         return
 
-    def _set_world_on_obj(obj, gx, gy):
+    def _set_world_and_cad_on_obj(obj, gx, gy):
         wx, wy = mapmeta.transform(int(gx), int(gy))
-        # try several attribute names
+        # world coords
         try:
             setattr(obj, "world_x", wx)
             setattr(obj, "world_y", wy)
-            return True
         except Exception:
             pass
-        # fallback attribute variants
-        for nx, ny in (("x_world", "y_world"), ("wx", "wy")):
-            try:
-                setattr(obj, nx, wx)
-                setattr(obj, ny, wy)
-                return True
-            except Exception:
-                pass
-        # if it's a dict-like object
         try:
             obj["world_x"] = wx
             obj["world_y"] = wy
-            return True
         except Exception:
             pass
-        return False
+
+        # CAD coords: try various providers
+        cad_x, cad_y = None, None
+        try:
+            grid_to_cad = getattr(mapmeta, "grid_to_cad", None)
+            if callable(grid_to_cad):
+                cad_x, cad_y = grid_to_cad(int(gx), int(gy))
+            else:
+                extras = getattr(mapmeta, "extras", {}) or {}
+                for key in ("grid_to_cad", "grid_to_cad_transform", "grid_to_cad_callable"):
+                    candidate = extras.get(key)
+                    if callable(candidate):
+                        cad_x, cad_y = candidate(int(gx), int(gy))
+                        break
+                else:
+                    # fallback to bbox-derived mapping if present
+                    bbox = extras.get("bbox") or getattr(mapmeta, "bbox", None)
+                    gs = extras.get("grid_shape") or getattr(mapmeta, "grid_shape", None)
+                    if bbox and gs:
+                        try:
+                            minx, maxx, miny, maxy = bbox
+                            gw, gh = int(gs[0]), int(gs[1])
+                            cw = (maxx - minx) / gw if gw else 1.0
+                            ch = (maxy - miny) / gh if gh else 1.0
+                            cad_x = minx + (int(gx) + 0.5) * cw
+                            cad_y = miny + (int(gy) + 0.5) * ch
+                        except Exception:
+                            cad_x, cad_y = None, None
+        except Exception:
+            cad_x, cad_y = None, None
+
+        if cad_x is not None and cad_y is not None:
+            try:
+                setattr(obj, "cad_x", float(cad_x))
+                setattr(obj, "cad_y", float(cad_y))
+            except Exception:
+                pass
+            try:
+                obj["cad_x"] = float(cad_x)
+                obj["cad_y"] = float(cad_y)
+                obj["cad_pos"] = (float(cad_x), float(cad_y))
+            except Exception:
+                pass
 
     def _get_grid_coords_from_obj(obj):
         # Try attribute names for grid indices
@@ -793,25 +805,39 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
                 nodes_iter = graph.nodes(data=True)
                 for nid, data in nodes_iter:
                     # data may contain grid coords
-                    coords = (
-                        _get_grid_coords_from_obj(data)
-                        or _get_grid_coords_from_obj(data.get("attrs", {}))
-                        if isinstance(data, dict)
-                        else None
-                    )
+                    coords = None
+                    try:
+                        coords = _get_grid_coords_from_obj(data)
+                    except Exception:
+                        coords = None
                     if coords:
                         gx, gy = coords
                         # set on data dict
-                        data["world_x"], data["world_y"] = mapmeta.transform(int(gx), int(gy))
+                        try:
+                            data["world_x"], data["world_y"] = mapmeta.transform(int(gx), int(gy))
+                        except Exception:
+                            pass
+                        # cad coords
+                        try:
+                            if callable(getattr(mapmeta, "grid_to_cad", None)):
+                                cx, cy = mapmeta.grid_to_cad(int(gx), int(gy))
+                                data["cad_pos"] = (float(cx), float(cy))
+                            else:
+                                extras = getattr(mapmeta, "extras", {}) or {}
+                                candidate = extras.get("grid_to_cad") or extras.get("grid_to_cad_transform")
+                                if callable(candidate):
+                                    cx, cy = candidate(int(gx), int(gy))
+                                    data["cad_pos"] = (float(cx), float(cy))
+                        except Exception:
+                            pass
                     else:
                         # try to inspect node object if nodes store objects as values
-                        # some graphs store objects as data['obj']
                         obj = data.get("obj") if isinstance(data, dict) and "obj" in data else None
                         if obj:
                             coords = _get_grid_coords_from_obj(obj)
                             if coords:
                                 gx, gy = coords
-                                _set_world_on_obj(obj, gx, gy)
+                                _set_world_and_cad_on_obj(obj, gx, gy)
                 return
             except Exception:
                 # not a networkx graph or unexpected structure — fall through
@@ -835,13 +861,13 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
         # nothing we can do safely
         return
 
-    # Iterate and assign world coords
+    # Iterate and assign world coords + cad coords
     try:
         for node in nodes_iterable:
             coords = _get_grid_coords_from_obj(node)
             if coords:
                 gx, gy = coords
-                _set_world_on_obj(node, gx, gy)
+                _set_world_and_cad_on_obj(node, gx, gy)
             else:
                 # sometimes node is a (gx,gy,obj) tuple
                 try:
@@ -850,7 +876,7 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
                         coords = _get_grid_coords_from_obj(maybe_obj)
                         if coords:
                             gx, gy = coords
-                            _set_world_on_obj(maybe_obj, gx, gy)
+                            _set_world_and_cad_on_obj(maybe_obj, gx, gy)
                 except Exception:
                     pass
     except Exception:

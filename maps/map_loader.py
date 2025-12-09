@@ -21,7 +21,6 @@ import config
 try:
     from maps.map_meta import MapMeta
 except Exception:
-    # Minimal fallback MapMeta (if your map_meta.py is missing temporarily)
     from dataclasses import dataclass
 
     @dataclass
@@ -31,6 +30,8 @@ except Exception:
         grid_shape: Tuple[int, int]
         transform: Callable[[int, int], Tuple[float, float]]
         extras: Dict[str, Any]
+        grid_to_cad: Optional[Callable[[int, int], Tuple[float, float]]] = None
+        cad_to_grid: Optional[Callable[[float, float], Tuple[int, int]]] = None
 
 
 # Try to import optional loaders (raster & dxf)
@@ -99,6 +100,9 @@ def _make_mapmeta_from_grid(layout: List[List[str]], source_path: Optional[str] 
     extras: Dict[str, Any] = {}
     extras["layout"] = layout
     extras["source_path"] = source_path
+    # Provide explicit grid<->cad mapping for consistency
+    extras["grid_to_cad"] = transform
+    extras["cad_to_grid"] = lambda x, y: (int(x), int(y))
 
     mm = MapMeta(
         layout=layout,
@@ -106,6 +110,8 @@ def _make_mapmeta_from_grid(layout: List[List[str]], source_path: Optional[str] 
         grid_shape=(gw, gh),
         transform=transform,
         extras=extras,
+        grid_to_cad=transform,
+        cad_to_grid=lambda x, y: (int(x), int(y)),
     )
     return mm
 
@@ -136,6 +142,8 @@ def _make_mapmeta_from_raster(
     extras: Dict[str, Any] = {}
     extras["layout"] = layout
     extras["source_path"] = source_path
+    extras["grid_to_cad"] = transform
+    extras["cad_to_grid"] = lambda x, y: (int(x), int(y))
 
     mm = MapMeta(
         layout=layout,
@@ -143,6 +151,8 @@ def _make_mapmeta_from_raster(
         grid_shape=(gw, gh),
         transform=transform,
         extras=extras,
+        grid_to_cad=transform,
+        cad_to_grid=lambda x, y: (int(x), int(y)),
     )
     return mm
 
@@ -197,20 +207,61 @@ def _make_mapmeta_from_dxf(
         minx, maxx, miny, maxy = bbox
 
     # If the loader provided a callable transform use it, otherwise construct one mapping grid to bbox
-    transform_callable = extras.get("transform") or extras.get("cad_to_grid")
+    transform_callable = extras.get("transform") or extras.get("cad_to_grid") or extras.get("grid_to_cad")
     if callable(transform_callable):
-        transform = transform_callable
-    else:
+        # If loader gave cad_to_grid instead, we need a grid_to_cad wrapper
+        # detect whether provided callable takes (gx,gy) -> (x,y) or (x,y)->(gx,gy)
+        # Best-effort: call with integer args and see what returns
+        try:
+            maybe = transform_callable(0, 0)
+            # If it returns floats, assume it's grid->cad
+            if isinstance(maybe, (tuple, list)) and len(maybe) == 2 and all(isinstance(v, (float, int)) for v in maybe):
+                transform = transform_callable
+            else:
+                # fallback to constructing transform below
+                raise Exception("callable didn't behave as grid->cad")
+        except Exception:
+            # If provided only cad_to_grid, build inverse grid->cad using bbox/grid dims
+            transform_callable = None
+            transform = None
+
+    if transform_callable is None:
         # compute cell sizes from bbox
         world_w = maxx - minx if maxx != minx else float(gw)
         world_h = maxy - miny if maxy != miny else float(gh)
         cell_w = world_w / gw
         cell_h = world_h / gh
-        transform = _grid_cell_center_transform_factory(minx, miny, cell_w, cell_h)
 
-    # Ensure extras contain helpful values and source path
+        def transform(gx: int, gy: int) -> Tuple[float, float]:
+            return (
+                float(minx + (gx + 0.5) * cell_w),
+                float(miny + (gy + 0.5) * cell_h),
+            )
+
+        # cad-to-grid
+        def cad_to_grid(x: float, y: float) -> Tuple[int, int]:
+            gx = int((x - minx) / cell_w)
+            gy = int((y - miny) / cell_h)
+            return gx, gy
+    else:
+        # If transform_callable is present and used as transform above, attempt to build inverse cad_to_grid
+        transform = transform_callable
+
+        def cad_to_grid(x: float, y: float) -> Tuple[int, int]:
+            # approximate inverse by nearest neighbor search over grid bounds
+            world_w = maxx - minx if maxx != minx else float(gw)
+            world_h = maxy - miny if maxy != miny else float(gh)
+            cell_w = world_w / gw
+            cell_h = world_h / gh
+            gx = int((x - minx) / cell_w)
+            gy = int((y - miny) / cell_h)
+            return gx, gy
+
+    # Ensure extras contain helpful values and source path and mapping funcs
     extras["layout"] = layout
     extras["source_path"] = source_path
+    extras["grid_to_cad"] = transform
+    extras["cad_to_grid"] = cad_to_grid
 
     mm = MapMeta(
         layout=layout,
@@ -218,6 +269,8 @@ def _make_mapmeta_from_dxf(
         grid_shape=(int(gw), int(gh)),
         transform=transform,
         extras=extras,
+        grid_to_cad=transform,
+        cad_to_grid=cad_to_grid,
     )
     return mm
 
@@ -252,9 +305,7 @@ def load_mapmeta(map_mode: str, map_file: Optional[str] = None) -> MapMeta:
         if load_floorplan_image_to_layout is None:
             raise RuntimeError("Raster map requested but floorplan_image_loader is not available.")
         if not source_path:
-            raise ValueError(
-                "RASTER map requires MAP_FILE (image path) in config or passed map_file"
-            )
+            raise ValueError("RASTER map requires MAP_FILE (image path) in config or passed map_file")
         # loader returns layout (list of rows) — we assume it uses config for thresholds
         print(f"[map_loader] calling raster loader for {source_path}")
         layout = load_floorplan_image_to_layout(source_path)
@@ -284,17 +335,11 @@ def load_mapmeta(map_mode: str, map_file: Optional[str] = None) -> MapMeta:
             except Exception:
                 gw = len(layout[0]) if layout else 110
                 gh = len(layout) if layout else 70
-            mm = _make_mapmeta_from_dxf(
-                {"grid_width": gw, "grid_height": gh}, layout=layout, source_path=source_path
-            )
-            print(
-                f"[map_loader] dxf(layout-only) MapMeta built: grid_shape={mm.grid_shape} bbox={mm.bbox}"
-            )
+            mm = _make_mapmeta_from_dxf({"grid_width": gw, "grid_height": gh}, layout=layout, source_path=source_path)
+            print(f"[map_loader] dxf(layout-only) MapMeta built: grid_shape={mm.grid_shape} bbox={mm.bbox}")
             return mm
         else:
-            raise RuntimeError(
-                "DXF map requested but no DXF loader is available (install ezdxf and ensure maps.dxf_loader exists)"
-            )
+            raise RuntimeError("DXF map requested but no DXF loader is available (install ezdxf and ensure maps.dxf_loader exists)")
 
     raise ValueError(f"Unknown map mode: {mode}")
 
@@ -303,10 +348,7 @@ def load_mapmeta_from_config() -> MapMeta:
     """
     Convenience helper: uses values from config.py to load the configured map.
     """
-    return load_mapmeta(
-        map_mode=getattr(config, "MAP_MODE", "raster"), map_file=getattr(config, "MAP_FILE", None)
-    )
-
+    return load_mapmeta(map_mode=getattr(config, "MAP_MODE", "raster"), map_file=getattr(config, "MAP_FILE", None))
 
 # -------------------------
 # Backwards-compatible helpers

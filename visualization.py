@@ -34,13 +34,56 @@ AGENT_SIZE = 30
 
 
 def _get_node_world_pos(env: EnvironmentGraph, node: Tuple[int, int]) -> Tuple[float, float]:
-    """Return world pos for a node (x,y) using graph node attribute 'pos'."""
-    data = env.graph.nodes[node]
-    pos = data.get("pos")
-    if pos is None:
-        # fallback to grid coords
+    """
+    Return world pos for a node (x,y).
+    Preference order:
+      - CAD coordinates exposed on node (cad_pos attribute)
+      - env.get_cad_pos(node) if available
+      - node data 'pos' attribute (world coords)
+      - fallback to grid indices as floats
+    """
+    try:
+        data = env.graph.nodes[node]
+    except Exception:
+        # node not present or env not networkx graph-like
+        try:
+            # try env.get_cad_pos
+            cad = getattr(env, "get_cad_pos", None)
+            if callable(cad):
+                cx, cy = env.get_cad_pos(node)
+                if cx is not None and cy is not None:
+                    return float(cx), float(cy)
+        except Exception:
+            pass
         return float(node[0]), float(node[1])
-    return float(pos[0]), float(pos[1])
+
+    # 1) node-level cad_pos attribute (set during building)
+    cad = data.get("cad_pos")
+    if cad and cad != (None, None):
+        try:
+            return float(cad[0]), float(cad[1])
+        except Exception:
+            pass
+
+    # 2) environment-level mapping
+    try:
+        if hasattr(env, "get_cad_pos"):
+            cx, cy = env.get_cad_pos(node)
+            if cx is not None and cy is not None:
+                return float(cx), float(cy)
+    except Exception:
+        pass
+
+    # 3) world pos attribute
+    pos = data.get("pos")
+    if pos is not None:
+        try:
+            return float(pos[0]), float(pos[1])
+        except Exception:
+            pass
+
+    # fallback to grid coords
+    return float(node[0]), float(node[1])
 
 
 def _get_agent_world_pos(agent: Any, env: EnvironmentGraph) -> Tuple[float, float]:
@@ -49,8 +92,8 @@ def _get_agent_world_pos(agent: Any, env: EnvironmentGraph) -> Tuple[float, floa
     Tries (in order):
       - agent.x, agent.y  (world coords)
       - agent.pos (tuple)
-      - agent.node (grid node tuple) -> env.node pos
-      - agent.gx, agent.gy or agent.grid_x, agent.grid_y
+      - agent.node (grid node tuple) -> env.node pos (prefers CAD if available)
+      - agent.gx, agent.gy or agent.grid_x, agent.grid_y -> resolve via env
       - fallback: (0,0)
     """
     # world coords
@@ -276,8 +319,8 @@ def run_visual_simulation(env):
     # Use NUM_AGENTS from *current* config (scenario may have changed it)
     sim = CrowdSimulation(env, config.NUM_AGENTS)
 
-    # Node positions (world coords provided by env.graph nodes 'pos')
-    pos = {n: env.get_pos(n) for n in env.graph.nodes()}
+    # Node positions (prefer CAD if available)
+    pos = {n: _get_node_world_pos(env, n) for n in env.graph.nodes()}
 
     # Precompute edges as segments for fast drawing
     edge_segments = [(pos[u], pos[v]) for u, v in env.graph.edges()]
@@ -412,7 +455,7 @@ def run_visual_simulation(env):
                 gy = getattr(agent, "gy", None) or getattr(agent, "grid_y", None)
                 if gx is not None and gy is not None:
                     try:
-                        wx, wy = env.graph.nodes[(int(gx), int(gy))]["pos"]
+                        wx, wy = _get_node_world_pos(env, (int(gx), int(gy)))
                         x, y = wx, wy
                     except Exception:
                         x, y = 0.0, 0.0
@@ -580,7 +623,7 @@ def run_visual_simulation(env):
     except Exception:
         pass
 
-    # NEW: overlay results on the original floorplan (for raster mode)
+    # NEW: overlay results on the original floorplan (for raster mode) or skip for DXF
     try:
         overlay_results_on_floorplan(sim, env)
     except Exception:
@@ -607,12 +650,20 @@ def overlay_results_on_image(sim, ax, map_path: str):
 
     Uses the same downscale factor as raster_loader.load_raster_floorplan_to_layout
     so the resulting image aligns exactly with the grid (one image cell -> one grid cell).
-    (raster_loader resizes image using Image.NEAREST with factor RASTER_DOWNSCALE_FACTOR).
-    See raster_loader.py for the original logic. :contentReference[oaicite:1]{index=1}
     """
-
     if not map_path or not os.path.exists(map_path):
         return  # nothing to overlay
+
+    # If simulation environment is DXF-based (has grid_to_cad mapping), skip image overlay.
+    env = getattr(sim, "env", None) or getattr(sim, "environment", None) or getattr(sim, "environment_graph", None)
+    mapmeta = getattr(env, "_mapmeta", None) if env is not None else None
+    if mapmeta is not None:
+        # If mapmeta has explicit grid_to_cad/cad_to_grid, this is likely DXF-derived.
+        extras = getattr(mapmeta, "extras", {}) or {}
+        if callable(getattr(mapmeta, "grid_to_cad", None)) or "grid_to_cad" in extras:
+            # DXF overlays should be handled by a different function that plots CAD coords.
+            # Skip raster image overlay here to avoid misalignment.
+            return
 
     # Open original image and downscale same as raster_loader
     img = Image.open(map_path).convert("RGB")
@@ -626,11 +677,13 @@ def overlay_results_on_image(sim, ax, map_path: str):
         w, h = img.size
 
     # env grid dimensions (should match layout->env mapping)
-    env = sim.env  # CrowdSimulation should reference env; adjust if your API differs
     # The grid cell <-> image pixel mapping: each grid cell corresponds to one downsampled pixel.
     # We use the same extent as the density heatmap: (-0.5, env.width-0.5, -0.5, env.height-0.5)
-    # so image covers the same coordinate frame as the grid.
-    extent = (-0.5, env.width - 0.5, -0.5, env.height - 0.5)
+    try:
+        env = getattr(sim, "env", None) or getattr(sim, "environment", None) or getattr(sim, "environment_graph", None)
+        extent = (-0.5, env.width - 0.5, -0.5, env.height - 0.5)
+    except Exception:
+        extent = (-0.5, 0.5, -0.5, 0.5)
 
     # Draw the image under everything
     ax.imshow(img_ds, origin="lower", extent=extent, zorder=-1, interpolation="nearest", alpha=0.9)

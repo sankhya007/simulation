@@ -5,12 +5,6 @@ Main CLI for running the crowd sim. Supports:
  - visual <scenario>
  - run <scenario>
  - batch <scenario>
-
-Examples:
-  python main.py list
-  python main.py visual normal
-  python main.py run evacuation --agents 300 --steps 1200 --target-percent 0.95 --overlay --out-dir experiment1
-  python main.py batch evacuation --trials 7 --workers 6 --target-percent 0.95 --agents 300 --steps 1200 --out-dir batch1
 """
 
 import argparse
@@ -21,10 +15,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
-# correct import
 from maps.map_loader import load_mapmeta_from_config
-
-# Project imports
 from scenarios import (
     SCENARIO_PRESETS,
     load_and_apply_scenario,
@@ -35,8 +26,6 @@ from environment import EnvironmentGraph
 from simulation import CrowdSimulation
 import config
 
-# analysis helpers: try to import compute_bottlenecks from analysis; fall back if missing
-# analysis helpers
 try:
     from analysis import compute_bottlenecks
 except Exception:
@@ -60,16 +49,14 @@ def _save_overlay_and_csv(
     tag: str,
 ):
     """
-    Save overlay image and CSV with bottleneck coordinates.
-    - bottlenecks: list of node ids or (x,y) cell indices depending on analysis output.
+    Save overlay + CSV with grid + CAD coordinates.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) Save serializable sim state if available
+    # save sim json
     try:
         data = sim.to_serializable()
     except Exception:
-        # fallback: minimal serializable
         data = {
             "time_step": getattr(sim, "time_step", None),
             "total_collisions": getattr(sim, "total_collisions", None),
@@ -77,34 +64,81 @@ def _save_overlay_and_csv(
         }
     (out_dir / f"{tag}_sim.json").write_text(str(data))
 
-    # 2) Write bottlenecks to CSV (best-effort mapping)
+    # -------------------------
+    # helper: grid → CAD
+    # -------------------------
+    def _grid_to_cad(gx: int, gy: int):
+        try:
+            cad = env.get_cad_pos((gx, gy))
+            if cad and cad != (None, None):
+                return cad
+        except Exception:
+            pass
+
+        try:
+            fn = getattr(mm, "grid_to_cad", None)
+            if callable(fn):
+                return fn(gx, gy)
+        except Exception:
+            pass
+
+        try:
+            ext = mm.extras
+            for key in ("grid_to_cad", "grid_to_cad_transform", "grid_to_cad_callable"):
+                fn = ext.get(key)
+                if callable(fn):
+                    return fn(gx, gy)
+        except Exception:
+            pass
+
+        try:
+            minx, maxx, miny, maxy = mm.bbox
+            gw, gh = mm.grid_shape
+            cw = (maxx - minx) / gw
+            ch = (maxy - miny) / gh
+            return (
+                minx + (gx + 0.5) * cw,
+                miny + (gy + 0.5) * ch,
+            )
+        except Exception:
+            return (None, None)
+
+    # -------------------------
+    # Write CSV
+    # -------------------------
     csv_path = out_dir / f"{tag}_bottlenecks.csv"
     with open(csv_path, "w", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["rank", "node_or_cell", "x", "y", "notes"])
+        writer.writerow(["rank", "node_or_cell", "x", "y", "cad_x", "cad_y", "notes"])
+
         for i, b in enumerate(bottlenecks, start=1):
-            # b may be node id, (x,y), or (node,score)
-            if (
-                isinstance(b, tuple)
-                and len(b) >= 2
-                and all(isinstance(x, (int, float)) for x in b[:2])
-            ):
-                x, y = b[0], b[1]
-                writer.writerow([i, f"cell", x, y, ""])
+            gx = gy = None
+
+            if isinstance(b, tuple) and len(b) >= 2 and all(isinstance(x, (int, float)) for x in b[:2]):
+                gx, gy = int(b[0]), int(b[1])
+                label = "cell"
+            elif isinstance(b, tuple) and len(b) >= 1 and isinstance(b[0], tuple):
+                gx, gy = int(b[0][0]), int(b[0][1])
+                label = "cell"
             else:
-                writer.writerow([i, str(b), "", "", ""])
+                label = str(b)
+
+            if gx is not None and gy is not None:
+                cad_x, cad_y = _grid_to_cad(gx, gy)
+                writer.writerow([i, label, gx, gy, cad_x or "", cad_y or "", ""])
+            else:
+                writer.writerow([i, label, "", "", "", "", ""])
+
     print("Saved bottlenecks CSV to", csv_path)
 
-    # 3) Create overlay image (visualization.overlay_results_on_image expected) - fallback: just show density
+    # overlay if available
     try:
-        # visualization may have overlay function that accepts sim, env, bottlenecks, out_path
         from visualization import overlay_results_on_image
-
         out_png = out_dir / f"{tag}_overlay.png"
         overlay_results_on_image(sim, env, bottlenecks, out_png)
         print("Saved overlay image to", out_png)
     except Exception:
-        print("overlay_results_on_image not available; skipping image overlay.")
+        print("overlay_results_on_image not available; skipping overlay.")
 
 
 def _run_single_trial(
@@ -115,23 +149,17 @@ def _run_single_trial(
     trial_index: int,
     out_dir: Path = Path("."),
     overlay: bool = False,
-) -> Dict[str, Any]:
-    """
-    Run a single trial (no visualization). Returns a result dict with summary & bottlenecks.
-    """
+):
     print(f"[trial {trial_index}] building env for scenario '{scenario_name}'")
+
     env, meta = load_and_apply_scenario(scenario_name)
-    # If the scenario didn't set num agents, override from args
     num_agents = agents if agents is not None else getattr(env, "num_agents", config.NUM_AGENTS)
 
     sim = CrowdSimulation(env, num_agents)
     max_steps = steps if steps is not None else config.MAX_STEPS
 
-    target_count = None
-    if target_percent:
-        target_count = int(round(target_percent * num_agents))
+    target_count = int(target_percent * num_agents) if target_percent else None
 
-    # run sim until either max_steps or target_count reached
     for t in range(max_steps):
         sim.step()
         if target_count:
@@ -139,53 +167,35 @@ def _run_single_trial(
             if exited >= target_count:
                 break
 
-    # compute bottlenecks
-    bottlenecks = None
+    # bottlenecks
     if compute_bottlenecks:
         try:
             bottlenecks = compute_bottlenecks(sim)
         except Exception:
             bottlenecks = None
+    else:
+        bottlenecks = None
 
     if bottlenecks is None:
-        # fallback: choose top nodes by visit count (assuming sim.node_visit_counts exists)
+        # fallback simple method
         try:
-            counts = getattr(sim, "node_visit_counts", None)
-            if counts is None:
-                # try sim.env or sim.environment
-                counts = getattr(sim, "environment", None)
-            # counts expected to be {node: visits}
-            if isinstance(counts, dict):
-                items = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
-                bottlenecks = [k for k, v in items[:10]]
-            else:
-                # try sim.get_density_matrix -> find top cells
-                dm = sim.get_density_matrix()
-                flat_idx = dm.flatten().argsort()[::-1][:10]
-                # convert flat indices back to (x,y)
-                h, w = dm.shape
-                b = []
-                for idx in flat_idx:
-                    r = idx // w
-                    c = idx % w
-                    b.append((c, r))
-                bottlenecks = b
+            dm = sim.get_density_matrix()
+            flat_idx = dm.flatten().argsort()[::-1][:10]
+            h, w = dm.shape
+            bottlenecks = [(i % w, i // w) for i in flat_idx]
         except Exception:
             bottlenecks = []
 
-    # save outputs
     tag = f"{scenario_name}_trial{trial_index}"
     _save_overlay_and_csv(sim, env, bottlenecks, out_dir, tag)
 
-    # return summary
-    summary = {
+    return {
         "scenario": scenario_name,
         "trial": trial_index,
         "steps": getattr(sim, "time_step", None),
         "num_agents": len(sim.agents),
         "bottlenecks": bottlenecks,
     }
-    return summary
 
 
 grid_w, grid_h = mm.grid_shape
@@ -202,8 +212,9 @@ def run_batch(
     out_dir: str = "out",
     overlay: bool = False,
 ):
-    out_dir_p = Path(out_dir)
-    out_dir_p.mkdir(parents=True, exist_ok=True)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
     pool = mp.Pool(processes=workers)
     runner = partial(
         _run_single_trial,
@@ -211,7 +222,7 @@ def run_batch(
         agents,
         steps,
         target_percent,
-        out_dir=out_dir_p,
+        out_dir=out,
         overlay=overlay,
     )
 
@@ -221,16 +232,14 @@ def run_batch(
         pool.close()
         pool.join()
 
-    # Aggregate bottleneck frequencies and write summary CSV
-    agg_csv = out_dir_p / f"{scenario_name}_batch_summary.csv"
-    with open(agg_csv, "w", newline="") as fh:
+    summary_csv = out / f"{scenario_name}_batch_summary.csv"
+    with open(summary_csv, "w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["trial", "steps", "num_agents", "bottlenecks"])
         for r in results:
-            writer.writerow(
-                [r["trial"], r["steps"], r["num_agents"], ";".join(map(str, r["bottlenecks"]))]
-            )
-    print("Batch finished. Summary written to", agg_csv)
+            writer.writerow([r["trial"], r["steps"], r["num_agents"], str(r["bottlenecks"])])
+
+    print("Batch finished. Summary written to", summary_csv)
 
 
 def run_single_visual(scenario_name: str):
@@ -247,13 +256,8 @@ def run_single_nonvisual(
     out_dir: str = "out",
 ):
     res = _run_single_trial(
-        scenario_name,
-        agents,
-        steps,
-        target_percent,
-        trial_index=1,
-        out_dir=Path(out_dir),
-        overlay=overlay,
+        scenario_name, agents, steps, target_percent,
+        trial_index=1, out_dir=Path(out_dir), overlay=overlay
     )
     print("Run complete:", res)
 
@@ -262,39 +266,35 @@ def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub_list = sub.add_parser("list", help="List available scenarios")
-    sub_visual = sub.add_parser("visual", help="Visual run")
-    sub_visual.add_argument("scenario", type=str)
+    sub.add_parser("list")
+    v = sub.add_parser("visual")
+    v.add_argument("scenario")
 
-    sub_run = sub.add_parser("run", help="Single run (non-visual)")
-    sub_run.add_argument("scenario", type=str)
-    sub_run.add_argument("--agents", type=int, default=None)
-    sub_run.add_argument("--steps", type=int, default=None)
-    sub_run.add_argument("--target-percent", type=float, default=None)
-    sub_run.add_argument("--overlay", action="store_true")
-    sub_run.add_argument("--out-dir", type=str, default="out_run")
+    r = sub.add_parser("run")
+    r.add_argument("scenario")
+    r.add_argument("--agents", type=int)
+    r.add_argument("--steps", type=int)
+    r.add_argument("--target-percent", type=float)
+    r.add_argument("--overlay", action="store_true")
+    r.add_argument("--out-dir", type=str, default="out_run")
 
-    sub_batch = sub.add_parser("batch", help="Batch run (multiprocessing)")
-    sub_batch.add_argument("scenario", type=str)
-    sub_batch.add_argument("--trials", type=int, default=5)
-    sub_batch.add_argument("--workers", type=int, default=2)
-    sub_batch.add_argument("--agents", type=int, default=None)
-    sub_batch.add_argument("--steps", type=int, default=None)
-    sub_batch.add_argument("--target-percent", type=float, default=None)
-    sub_batch.add_argument("--overlay", action="store_true")
-    sub_batch.add_argument("--out-dir", type=str, default="out_batch")
+    b = sub.add_parser("batch")
+    b.add_argument("scenario")
+    b.add_argument("--trials", type=int, default=5)
+    b.add_argument("--workers", type=int, default=2)
+    b.add_argument("--agents", type=int)
+    b.add_argument("--steps", type=int)
+    b.add_argument("--target-percent", type=float)
+    b.add_argument("--overlay", action="store_true")
+    b.add_argument("--out-dir", type=str, default="out_batch")
 
     args = p.parse_args()
 
     if args.cmd == "list":
         list_scenarios()
-        return
-
-    if args.cmd == "visual":
+    elif args.cmd == "visual":
         run_single_visual(args.scenario)
-        return
-
-    if args.cmd == "run":
+    elif args.cmd == "run":
         run_single_nonvisual(
             args.scenario,
             agents=args.agents,
@@ -303,9 +303,7 @@ def main():
             overlay=args.overlay,
             out_dir=args.out_dir,
         )
-        return
-
-    if args.cmd == "batch":
+    elif args.cmd == "batch":
         run_batch(
             args.scenario,
             trials=args.trials,
@@ -316,7 +314,6 @@ def main():
             overlay=args.overlay,
             out_dir=args.out_dir,
         )
-        return
 
 
 if __name__ == "__main__":

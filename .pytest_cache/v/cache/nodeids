@@ -1,4 +1,8 @@
 [
+  "tests/test_cad_coords.py::test_nodes_have_cad_pos_or_grid_to_cad_transform",
+  "tests/test_coordinate_mapping.py::test_bottleneck_csv_output",
+  "tests/test_coordinate_mapping.py::test_environment_cad_positions",
+  "tests/test_coordinate_mapping.py::test_grid_to_cad_basic",
   "tests/test_dxf_loader.py::test_dxf_loader_generates_layout",
   "tests/test_graph_builder.py::test_centerline_or_fallback",
   "tests/test_graph_builder.py::test_grid_graph_basic",

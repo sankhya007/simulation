@@ -484,31 +484,61 @@ def load_dxf_floorplan_to_layout(path: str) -> LayoutMatrix:
 def load_dxf_floorplan_mapmeta(path: str) -> MapMeta:
     """
     New API: return MapMeta object.
-    Backwards compatible: underlying implementation still returns layout, meta dict,
-    so we adapt that into MapMeta here.
+    Adapts existing (layout, meta) DXF loader output into a MapMeta with full
+    CAD↔grid mapping (grid_to_cad + cad_to_grid + transform).
     """
-    layout, meta = load_dxf_floorplan_with_meta(path)  # existing function in file
-    # meta must contain bbox, grid_width/grid_height (existing loader sets these)
+    layout, meta = load_dxf_floorplan_with_meta(path)
+
+    # --- Extract bbox & grid dims ---
     bbox = meta.get("bbox", (0.0, 1.0, 0.0, 1.0))
+    min_x, max_x, min_y, max_y = bbox
     grid_w = int(meta.get("grid_width", meta.get("grid_w", 110)))
     grid_h = int(meta.get("grid_height", meta.get("grid_h", 70)))
 
-    min_x, max_x, min_y, max_y = bbox
-    width = max_x - min_x if max_x - min_x != 0 else 1.0
-    height = max_y - min_y if max_y - min_y != 0 else 1.0
+    # world span
+    width = (max_x - min_x) or 1.0
+    height = (max_y - min_y) or 1.0
 
-    def transform(gx: int, gy: int):
-        real_x = min_x + (gx + 0.5) * (width / grid_w)
-        real_y = min_y + (gy + 0.5) * (height / grid_h)
-        return real_x, real_y
+    # --- Cell size in CAD space ---
+    cell_w = width / grid_w
+    cell_h = height / grid_h
 
-    extras = meta.copy()
-    # stash original metadata under 'raw_meta'
-    extras["raw_meta"] = meta
+    # ---------------------------------------------
+    # 1) Build grid→CAD mapping (official transform)
+    # ---------------------------------------------
+    def grid_to_cad(gx: int, gy: int):
+        return (
+            float(min_x + (gx + 0.5) * cell_w),
+            float(min_y + (gy + 0.5) * cell_h),
+        )
 
+    # ---------------------------------------------
+    # 2) Build CAD→grid mapping (reverse transform)
+    # ---------------------------------------------
+    def cad_to_grid(x: float, y: float):
+        gx = int((x - min_x) / cell_w)
+        gy = int((y - min_y) / cell_h)
+        return gx, gy
+
+    # Primary MapMeta.transform = grid→CAD
+    transform = grid_to_cad
+
+    # --- extras: keep all metadata + stable mapping names ---
+    extras = dict(meta)
+    extras["grid_to_cad"] = grid_to_cad
+    extras["cad_to_grid"] = cad_to_grid
+
+    # --- Build MapMeta object ---
     return MapMeta(
-        layout=layout, bbox=bbox, grid_shape=(grid_w, grid_h), transform=transform, extras=extras
+        layout=layout,
+        bbox=bbox,
+        grid_shape=(grid_w, grid_h),
+        transform=transform,
+        extras=extras,
+        grid_to_cad=grid_to_cad,
+        cad_to_grid=cad_to_grid,
     )
+
 
 
 # Backwards-compatible helper: old API still works
