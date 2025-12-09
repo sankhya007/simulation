@@ -5,7 +5,15 @@ Main CLI for running the crowd sim. Supports:
  - visual <scenario>
  - run <scenario>
  - batch <scenario>
+
+Usage examples:
+  python main.py list
+  python main.py visual normal
+  python main.py run normal --agents 50 --steps 200
+  python main.py --motion-model social_force visual normal
 """
+
+from __future__ import annotations
 
 import argparse
 import os
@@ -15,6 +23,17 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
+# lightweight pre-parser to extract --motion-model from argv early
+# so we can apply the override before loading modules that read config.
+_pre_parser = argparse.ArgumentParser(add_help=False)
+_pre_parser.add_argument("--motion-model", choices=["graph", "social_force", "rvo"], help="override config.MOTION_MODEL for this run")
+_pre_args, _remaining_argv = _pre_parser.parse_known_args()
+import config as _config  # import after parsing pre-arg to allow override
+if _pre_args.motion_model:
+    _config.MOTION_MODEL = _pre_args.motion_model
+
+# Now safe to import the rest of the project (they will see config possibly modified)
+import config
 from maps.map_loader import load_mapmeta_from_config
 from scenarios import (
     SCENARIO_PRESETS,
@@ -24,13 +43,14 @@ from scenarios import (
 from visualization import run_visual_simulation, show_density_heatmap
 from environment import EnvironmentGraph
 from simulation import CrowdSimulation
-import config
 
 try:
     from analysis import compute_bottlenecks
 except Exception:
     compute_bottlenecks = None
 
+
+# Load map meta at module import time (same behaviour as before)
 mm = load_mapmeta_from_config()
 layout = mm.layout
 
@@ -53,7 +73,7 @@ def _save_overlay_and_csv(
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # save sim json
+    # save sim json (best-effort)
     try:
         data = sim.to_serializable()
     except Exception:
@@ -64,9 +84,7 @@ def _save_overlay_and_csv(
         }
     (out_dir / f"{tag}_sim.json").write_text(str(data))
 
-    # -------------------------
-    # helper: grid → CAD
-    # -------------------------
+    # helper: grid -> cad converter (best-effort attempts)
     def _grid_to_cad(gx: int, gy: int):
         try:
             cad = env.get_cad_pos((gx, gy))
@@ -83,7 +101,7 @@ def _save_overlay_and_csv(
             pass
 
         try:
-            ext = mm.extras
+            ext = getattr(mm, "extras", {}) or {}
             for key in ("grid_to_cad", "grid_to_cad_transform", "grid_to_cad_callable"):
                 fn = ext.get(key)
                 if callable(fn):
@@ -103,9 +121,7 @@ def _save_overlay_and_csv(
         except Exception:
             return (None, None)
 
-    # -------------------------
-    # Write CSV
-    # -------------------------
+    # Write CSV of bottlenecks
     csv_path = out_dir / f"{tag}_bottlenecks.csv"
     with open(csv_path, "w", newline="") as fh:
         writer = csv.writer(fh)
@@ -113,7 +129,6 @@ def _save_overlay_and_csv(
 
         for i, b in enumerate(bottlenecks, start=1):
             gx = gy = None
-
             if isinstance(b, tuple) and len(b) >= 2 and all(isinstance(x, (int, float)) for x in b[:2]):
                 gx, gy = int(b[0]), int(b[1])
                 label = "cell"
@@ -198,6 +213,7 @@ def _run_single_trial(
     }
 
 
+# create a default EnvironmentGraph used by some helpers (same behaviour as before)
 grid_w, grid_h = mm.grid_shape
 env = EnvironmentGraph(width=grid_w, height=grid_h, layout_matrix=layout, mapmeta=mm)
 
@@ -263,9 +279,11 @@ def run_single_nonvisual(
 
 
 def main():
-    p = argparse.ArgumentParser()
+    # build the main parser, but parse using the remaining argv produced by the pre-parser
+    p = argparse.ArgumentParser(prog="main.py")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # add the subcommands (visual/run/batch/list)
     sub.add_parser("list")
     v = sub.add_parser("visual")
     v.add_argument("scenario")
@@ -288,8 +306,16 @@ def main():
     b.add_argument("--overlay", action="store_true")
     b.add_argument("--out-dir", type=str, default="out_batch")
 
-    args = p.parse_args()
+    # parse args using the argv left after extracting --motion-model earlier
+    args = p.parse_args(_remaining_argv)
 
+    # If user also provided --motion-model in the main argv (unlikely because pre-parser removed it),
+    # respect it here as well (this keeps backward-compatibility for direct parsing).
+    # But typically the pre-parser already applied it.
+    if getattr(args, "motion_model", None):
+        config.MOTION_MODEL = args.motion_model
+
+    # dispatch
     if args.cmd == "list":
         list_scenarios()
     elif args.cmd == "visual":
@@ -297,22 +323,22 @@ def main():
     elif args.cmd == "run":
         run_single_nonvisual(
             args.scenario,
-            agents=args.agents,
-            steps=args.steps,
-            target_percent=args.target_percent,
-            overlay=args.overlay,
-            out_dir=args.out_dir,
+            agents=getattr(args, "agents", None),
+            steps=getattr(args, "steps", None),
+            target_percent=getattr(args, "target_percent", None),
+            overlay=getattr(args, "overlay", False),
+            out_dir=getattr(args, "out_dir", "out_run"),
         )
     elif args.cmd == "batch":
         run_batch(
             args.scenario,
-            trials=args.trials,
-            workers=args.workers,
-            agents=args.agents,
-            steps=args.steps,
-            target_percent=args.target_percent,
-            overlay=args.overlay,
-            out_dir=args.out_dir,
+            trials=getattr(args, "trials", 5),
+            workers=getattr(args, "workers", 2),
+            agents=getattr(args, "agents", None),
+            steps=getattr(args, "steps", None),
+            target_percent=getattr(args, "target_percent", None),
+            overlay=getattr(args, "overlay", False),
+            out_dir=getattr(args, "out_dir", "out_batch"),
         )
 
 

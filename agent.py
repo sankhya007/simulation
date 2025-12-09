@@ -3,7 +3,7 @@
 import random
 import math
 from dataclasses import dataclass
-from typing import Tuple, Dict, Optional, Protocol
+from typing import Tuple, Dict, Optional, Protocol, Any
 
 from environment import EnvironmentGraph
 from config import (
@@ -24,9 +24,7 @@ EdgeKey = Tuple[Node, Node]
 class DecisionState:
     """
     Snapshot of crowd-level information used by the agent to take a decision.
-    This is what an external Agent AI / RL policy would see.
     """
-
     time_step: int
     node_occupancy: Dict[Node, int]
     group_targets: Dict[int, Node]  # group_id -> leader position
@@ -50,19 +48,6 @@ class AgentPolicy(Protocol):
 class Agent:
     """
     Single agent moving on the EnvironmentGraph.
-
-    Attributes:
-        - agent_type: "leader" | "follower" | "normal" | "panic"
-        - group_id: int or None
-        - speed: probability of moving in a given tick (0..1)
-        - perception_radius: how far it "sees" group / congestion
-        - navigation_strategy: "shortest" | "congestion" | "safe"
-        - policy: optional external decision policy (AgentPolicy)
-
-    Metrics:
-        - steps_taken, wait_steps, replans, goals_reached
-        - exit_reached, exit_time_step
-        - initial_shortest_path_len
     """
 
     _id_counter = 0
@@ -77,10 +62,14 @@ class Agent:
         policy: Optional[AgentPolicy] = None,
         navigation_strategy: str = "congestion",
     ):
+        # ---- Ensure env reference exists immediately ----
         self.env = env
+
+        # identity
         self.id = Agent._id_counter
         Agent._id_counter += 1
 
+        # basic attributes
         self.agent_type = agent_type
         self.group_id = group_id
         self.is_leader = agent_type == "leader"
@@ -88,6 +77,7 @@ class Agent:
         # navigation strategy (AI behaviour)
         self.strategy = navigation_strategy  # "shortest", "congestion", "safe"
 
+        # speed
         if speed is None:
             self.speed = AGENT_TYPE_SPEEDS.get(agent_type, 0.8)
         else:
@@ -108,13 +98,12 @@ class Agent:
         self.initial_goal: Optional[Node] = None
         self.initial_shortest_path_len: int = 0
 
-        # --- position / path ---
-        self.current_node: Node = env.get_random_node()
+        # ---------- position / path (choose start early) ----------
+        self.current_node: Node = self.env.get_random_node()
 
         # initial goal & path
         if EVACUATION_MODE:
-            # Evacuation: go to nearest exit
-            exit_path = env.shortest_path_to_nearest_exit(self.current_node)
+            exit_path = self.env.shortest_path_to_nearest_exit(self.current_node)
             if exit_path:
                 self.goal_node = exit_path[-1]
                 self.path = exit_path
@@ -122,10 +111,9 @@ class Agent:
                 self.goal_node = self.current_node
                 self.path = [self.current_node]
         else:
-            # Normal mode: random goal
-            self.goal_node: Node = env.get_random_node()
+            self.goal_node: Node = self.env.get_random_node()
             while self.goal_node == self.current_node:
-                self.goal_node = env.get_random_node()
+                self.goal_node = self.env.get_random_node()
             self.path = self._compute_path(self.current_node, self.goal_node)
 
         self.path_index = 0
@@ -135,7 +123,7 @@ class Agent:
         self.initial_goal = self.goal_node
 
         # ideal shortest path length ignoring congestion
-        ideal_path = env.shortest_path_weighted(
+        ideal_path = self.env.shortest_path_weighted(
             self.initial_start,
             self.initial_goal,
             weight_attr="distance",
@@ -148,19 +136,30 @@ class Agent:
         self.finished = False
         self.collisions = 0
 
-    # ---------- policy management ----------
+        # ---------- continuous-motion fields (usable by SF / RVO) ----------
+        try:
+            # env.get_pos should return world coords
+            self.pos = tuple(self.env.get_pos(self.current_node))
+        except Exception:
+            # fallback to grid indices as floats
+            self.pos = (float(self.current_node[0]), float(self.current_node[1]))
+        self.vel = (0.0, 0.0)
+        self.radius = 0.3
 
+        # default motion model adapter (GraphMotionModel) if available
+        try:
+            from motion_models import GraphMotionModel
+
+            self.motion_model = GraphMotionModel()
+        except Exception:
+            self.motion_model = None
+
+    # ---------- policy management ----------
     def set_policy(self, policy: AgentPolicy):
         self.policy = policy
 
     # ---------- internal helpers ----------
-
     def _weight_attr_for_routing(self) -> str:
-        """
-        Decide which edge attribute to use when planning:
-        - "shortest"  -> pure geometric distance (ignores congestion)
-        - "congestion"/"safe" -> dynamic congestion-aware 'weight'
-        """
         if self.strategy == "shortest":
             return "distance"
         else:
@@ -172,9 +171,6 @@ class Agent:
         return self.env.shortest_path_weighted(start, goal, weight_attr=weight_attr)
 
     def _ensure_path_valid(self):
-        """
-        If remaining path contains blocked nodes, recompute.
-        """
         if self.path_index >= len(self.path) - 1:
             return
         remaining = self.path[self.path_index + 1 :]
@@ -185,12 +181,7 @@ class Agent:
                 return
 
     # ---------- goal / path management ----------
-
     def choose_new_goal(self):
-        """
-        In normal mode: pick a new random goal after finishing.
-        In evacuation mode: reaching the exit is terminal -> no new goal.
-        """
         if EVACUATION_MODE:
             self.finished = True
             return
@@ -205,42 +196,28 @@ class Agent:
         self.finished = False
 
     # ---------- main decision function ----------
-
     def desired_next_node(self, state: DecisionState) -> Node:
         if self.policy is not None:
             return self.policy.choose_action(self, state, self.env)
         return self._rule_based_desired_next_node(state)
 
     def _rule_based_desired_next_node(self, state: DecisionState) -> Node:
-        """
-        Rule-based behaviour with time-aware movement:
-
-        - Group following / leader tracking
-        - Global-density-based replanning
-        - Edge-capacity-aware rerouting
-        - Node-level congestion avoidance & sidesteps
-        - NEW: effective speed depends on edge congestion (time model)
-        """
         node_occupancy = state.node_occupancy
         group_targets = state.group_targets
         edge_over_capacity = state.edge_over_capacity
         global_density = state.global_density
 
-        # Ensure our path is still valid given possible new blocks
         self._ensure_path_valid()
 
-        # End of path?
         if self.path_index >= len(self.path) - 1:
             self.finished = True
 
-        # In normal mode, occasionally pick a fresh random goal when finished
         if (not EVACUATION_MODE) and self.finished and random.random() < AGENT_REPLAN_PROB:
             self.choose_new_goal()
 
         if self.finished:
             return self.current_node
 
-        # --- group-following behaviour for followers ---
         target_node = self.goal_node
 
         if self.agent_type == "follower" and self.group_id is not None:
@@ -256,12 +233,10 @@ class Agent:
                         self.path = self._compute_path(self.current_node, target_node)
                         self.path_index = 0
 
-        # --- global density-based replanning (crowded scenario) ---
         if global_density > GLOBAL_DENSITY_REPLAN_THRESHOLD and random.random() < 0.2:
             self.path = self._compute_path(self.current_node, target_node)
             self.path_index = 0
 
-        # --- ensure path is current after any replanning ---
         if self.path_index >= len(self.path) - 1:
             self.path = self._compute_path(self.current_node, target_node)
             self.path_index = 0
@@ -271,7 +246,6 @@ class Agent:
 
         candidate_next = self.path[self.path_index + 1]
 
-        # --- avoid edges that are over capacity ---
         edge_key = (self.current_node, candidate_next)
         if edge_over_capacity.get(edge_key, False):
             self.path = self._compute_path(self.current_node, target_node)
@@ -279,23 +253,18 @@ class Agent:
             if len(self.path) > 1:
                 candidate_next = self.path[1]
 
-        # --- TIME MODEL: adjust move probability based on edge slowdown ---
-        # If staying in place (no move), just use base speed
         if candidate_next == self.current_node:
             effective_speed = self.speed
         else:
             slowdown = self.env.get_edge_slowdown(self.current_node, candidate_next)
-            # bigger slowdown -> smaller effective speed
             effective_speed = self.speed / slowdown
 
-        # clamp to [0.05, 1.0] so agents never fully freeze
         effective_speed = max(0.05, min(effective_speed, 1.0))
 
         if random.random() > effective_speed:
             self.wait_steps += 1
             return self.current_node
 
-        # --- simple congestion avoidance at node level ---
         candidate_density = node_occupancy.get(candidate_next, 0)
 
         threshold = DENSITY_THRESHOLD
@@ -305,7 +274,6 @@ class Agent:
         if candidate_density <= threshold:
             return candidate_next
 
-        # Try sidestep with lower density
         neighbors = self.env.get_neighbors(self.current_node, accessible_only=True)
         if not neighbors:
             self.wait_steps += 1
@@ -344,17 +312,47 @@ class Agent:
         return best_node
 
     # ---------- movement & position ----------
-
     def move_to(self, node: Node):
-        if node != self.current_node:
-            self.current_node = node
-            self.steps_taken += 1
+        """
+        Move agent to a graph node. Update both the discrete node (current_node)
+        and the continuous position (pos) so visualizers that read get_position()
+        show the movement.
+        """
+        if node == self.current_node:
+            return
 
-            if self.path_index + 1 < len(self.path) and self.path[self.path_index + 1] == node:
-                self.path_index += 1
-            else:
-                self.path = self._compute_path(self.current_node, self.goal_node)
-                self.path_index = 0
+        # update discrete bookkeeping
+        self.current_node = node
+        self.steps_taken += 1
+
+        # update continuous world position so visualizations show agent moved
+        try:
+            # env.get_pos(node) should return world (x,y)
+            self.pos = tuple(self.env.get_pos(node))
+        except Exception:
+            # fallback: set to node indices as floats
+            self.pos = (float(node[0]), float(node[1]))
+
+        # update path index if we were following a path, else replan
+        if self.path_index + 1 < len(self.path) and self.path[self.path_index + 1] == node:
+            self.path_index += 1
+        else:
+            # path diverged — recompute a path from new location
+            self.path = self._compute_path(self.current_node, self.goal_node)
+            self.path_index = 0
+
 
     def get_position(self):
+        try:
+            if hasattr(self, "pos") and self.pos is not None:
+                return float(self.pos[0]), float(self.pos[1])
+        except Exception:
+            pass
         return self.env.get_pos(self.current_node)
+
+    def integrate_continuous(self, vx: float, vy: float, dt: float = 1.0):
+        px, py = self.get_position()
+        nx, ny = px + vx * dt, py + vy * dt
+        self.pos = (nx, ny)
+        self.vel = (vx, vy)
+        # mapping to node handled by simulation

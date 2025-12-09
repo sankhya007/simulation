@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import List, Tuple, Dict
 
 import numpy as np
+import config
 
 from environment import EnvironmentGraph
 from agent import Agent, DecisionState
@@ -23,6 +24,14 @@ from config import (
     NAV_STRATEGY_MODE,
     NAV_STRATEGY_MIX,
 )
+# motion models imported if present
+try:
+    from motion_models import MotionState, SocialForceModel, RVOMotionModel, GraphMotionModel
+except Exception:
+    MotionState = None
+    SocialForceModel = None
+    RVOMotionModel = None
+    GraphMotionModel = None
 
 
 Node = Tuple[int, int]
@@ -33,16 +42,6 @@ class CrowdSimulation:
     """Manages the whole crowd, interactions, and metrics."""
 
     def get_metrics_summary(self) -> Dict[str, dict]:
-        """
-        Compute global, per-agent-type, and per-strategy metrics.
-
-        Returns a dict like:
-        {
-            "global": {...},
-            "by_type": {...},
-            "by_strategy": {...},
-        }
-        """
         num_agents = len(self.agents)
         step_counts = np.array([a.steps_taken for a in self.agents])
         wait_counts = np.array([a.wait_steps for a in self.agents])
@@ -54,7 +53,6 @@ class CrowdSimulation:
             [a.exit_time_step for a in self.agents if a.exit_time_step is not None]
         )
 
-        # path optimality ratios (ignore agents with 0 ideal length)
         ratios = []
         for a in self.agents:
             if a.initial_shortest_path_len > 0:
@@ -75,7 +73,6 @@ class CrowdSimulation:
             "max_density_over_time": self.max_density_per_step,
         }
 
-        # group by agent_type
         from collections import defaultdict
 
         agents_by_type = defaultdict(list)
@@ -107,7 +104,6 @@ class CrowdSimulation:
                 "avg_steps_over_optimal": float(ratios_t.mean()) if len(ratios_t) > 0 else None,
             }
 
-        # group by navigation strategy
         agents_by_strategy = defaultdict(list)
         for a in self.agents:
             agents_by_strategy[a.strategy].append(a)
@@ -161,10 +157,35 @@ class CrowdSimulation:
         for agent in self.agents:
             self.node_visit_counts[agent.current_node] += 1
 
-    # ---------- initialization helpers ----------
+        # Motion model selection
+        mmode = getattr(config, "MOTION_MODEL", "graph")
+        if mmode == "social_force" and SocialForceModel is not None:
+            self.global_motion_model = SocialForceModel(
+                relaxation_time=getattr(config, "SF_RELAX_T", 0.5),
+                repulsion_A=getattr(config, "SF_A", 2.0),
+                repulsion_B=getattr(config, "SF_B", 0.5),
+                agent_radius=getattr(config, "AGENT_RADIUS", 0.3),
+                max_speed=getattr(config, "SF_MAX_SPEED", 1.5),
+            )
+        elif mmode == "rvo" and RVOMotionModel is not None:
+            self.global_motion_model = RVOMotionModel(
+                neighbor_dist=getattr(config, "RVO_NEIGHBOR_DIST", 3.0),
+                max_speed=getattr(config, "RVO_MAX_SPEED", 1.5),
+                samples=getattr(config, "RVO_SAMPLES", 16),
+            )
+        else:
+            # fallback to Graph adapter if available
+            if GraphMotionModel is not None:
+                self.global_motion_model = GraphMotionModel()
+            else:
+                self.global_motion_model = None
 
+        for a in self.agents:
+            if self.global_motion_model is not None:
+                a.motion_model = self.global_motion_model
+
+    # ---------- initialization helpers ----------
     def _init_agents_with_groups(self, num_agents: int):
-        # --- decide navigation strategies for each agent ---
         if NAV_STRATEGY_MODE == "mixed":
             frac_short = NAV_STRATEGY_MIX.get("shortest", 0.0)
             frac_cong = NAV_STRATEGY_MIX.get("congestion", 0.0)
@@ -177,16 +198,13 @@ class CrowdSimulation:
             strategies = ["shortest"] * n_short + ["congestion"] * n_cong + ["safe"] * n_safe
             random.shuffle(strategies)
         else:
-            # uniform population of a single strategy
             strategies = [NAV_STRATEGY_MODE] * num_agents
 
         full_groups = num_agents // GROUP_SIZE
         agent_index = 0
         group_id = 1
 
-        # Full groups
         for _ in range(full_groups):
-            # leader
             self.agents.append(
                 Agent(
                     env=self.env,
@@ -197,7 +215,6 @@ class CrowdSimulation:
             )
             agent_index += 1
 
-            # followers
             for _ in range(GROUP_SIZE - 1):
                 self.agents.append(
                     Agent(
@@ -211,7 +228,6 @@ class CrowdSimulation:
 
             group_id += 1
 
-        # Leftover agents as normals
         while agent_index < num_agents:
             self.agents.append(
                 Agent(
@@ -224,16 +240,9 @@ class CrowdSimulation:
             agent_index += 1
 
     # ---------- dynamic events ----------
-
     def _apply_dynamic_events(self, node_occupancy: Dict[Node, int]):
-        """
-        Introduce dynamic obstacles and exit changes during the simulation.
-        - Randomly blocks some unoccupied nodes.
-        - Randomly opens/closes exits.
-        """
         import random
 
-        # Dynamic blocking of nodes
         if DYNAMIC_BLOCKS_ENABLED and self.time_step % BLOCK_NODE_EVERY_N_STEPS == 0:
             candidates = [
                 n
@@ -244,7 +253,6 @@ class CrowdSimulation:
                 node = random.choice(candidates)
                 self.env.block_node(node)
 
-        # Dynamic exit opening/closing
         if DYNAMIC_EXITS_ENABLED and self.time_step % EXIT_TOGGLE_EVERY_N_STEPS == 0:
             exits = [n for n in self.env.graph.nodes() if self.env.is_exit(n)]
             border_candidates = [
@@ -270,19 +278,11 @@ class CrowdSimulation:
                 self.env.mark_exit(node)
 
     # ---------- core step ----------
-
     def step(self):
         """
-        Single sim tick:
-        - compute node occupancy
-        - apply dynamic events (blocked nodes / exit changes)
-        - approximate edge congestion and update edge weights
-        - compute group leader positions
-        - build DecisionState and query each agent for desired move
-        - resolve conflicts & move
-        - track exit arrivals and density metrics
-        - measure collisions
+        Single sim tick.
         """
+        # advance time
         self.time_step += 1
 
         # 1) node occupancy at current time
@@ -308,15 +308,12 @@ class CrowdSimulation:
                 occ = node_occupancy.get(u, 0) + node_occupancy.get(v, 0)
                 edge_occupancy[(u, v)] = occ
 
-                # compare to capacity
                 cap = self.env.graph[u][v].get("max_capacity", EDGE_BASE_CAPACITY)
                 over = occ > cap
                 edge_over_capacity[(u, v)] = over
 
-                # update dynamic weight
                 self.env.set_edge_dynamic_weight(u, v, occ)
         else:
-            # fast mode: no congestion weighting, edges stay at base distance
             self.env.reset_edge_weights_to_distance()
 
         # 4) group leader positions
@@ -333,7 +330,98 @@ class CrowdSimulation:
         occupied_nodes = len(node_occupancy)
         global_density = total_agents / max(1, occupied_nodes)
 
-        # 6) build state snapshot for this tick
+        # Continuous motion models branch
+        if getattr(config, "MOTION_MODEL", "graph") in ("social_force", "rvo") and MotionState is not None:
+            # prepare MotionState inputs
+            pos_map = {a.id: a.get_position() for a in self.agents}
+            vel_map = {a.id: getattr(a, "vel", (0.0, 0.0)) for a in self.agents}
+
+            motion_state = MotionState(
+                time_step=self.time_step,
+                positions=pos_map,
+                velocities=vel_map,
+                node_occupancy=node_occupancy,
+                group_targets=group_targets,
+                edge_over_capacity=edge_over_capacity,
+                global_density=global_density,
+            )
+
+            # compute candidate velocities
+            new_vels = {}
+            for agent in self.agents:
+                if getattr(agent, "motion_model", None) is not None:
+                    vx, vy = agent.motion_model.compute_velocity(agent, motion_state, self.env)
+                else:
+                    # fallback: zero velocity
+                    vx, vy = (0.0, 0.0)
+                new_vels[agent.id] = (vx, vy)
+
+            # integrate and map to nodes
+            for agent in self.agents:
+                vx, vy = new_vels[agent.id]
+                # simple dt=1 step; you can reduce dt via substeps if unstable
+                agent.integrate_continuous(vx, vy, dt=1.0)
+
+                # robust mapping: prefer MapMeta.cad_to_grid but clamp to valid range,
+                # and if result is not a node in the graph fall back to nearest-node search.
+                mapped_node = None
+                try:
+                    mm = getattr(self.env, "_mapmeta", None)
+                    if mm is not None and callable(getattr(mm, "cad_to_grid", None)):
+                        gx, gy = mm.cad_to_grid(agent.pos[0], agent.pos[1])
+                        # clamp to valid integer grid indices
+                        gw, gh = self.env.width, self.env.height
+                        igx = max(0, min(int(gx), gw - 1))
+                        igy = max(0, min(int(gy), gh - 1))
+                        candidate = (igx, igy)
+                        # ensure candidate exists in graph (some maps may have inaccessible border)
+                        if candidate in self.env.graph:
+                            mapped_node = candidate
+                        else:
+                            mapped_node = None  # force fallback
+                    # else fallthrough to nearest-node fallback
+                except Exception:
+                    mapped_node = None
+
+                if mapped_node is None:
+                    # fallback: find nearest existing node in graph by Euclidean distance
+                    try:
+                        best = min(
+                            self.env.graph.nodes(),
+                            key=lambda n: math.hypot(agent.pos[0] - self.env.get_pos(n)[0], agent.pos[1] - self.env.get_pos(n)[1]),
+                        )
+                        mapped_node = best
+                    except Exception:
+                        # last resort: keep the previous node to avoid creating invalid key
+                        mapped_node = getattr(agent, "current_node", None)
+
+                # assign mapped node if valid
+                if mapped_node is not None:
+                    agent.current_node = mapped_node
+
+                # update node visit (guard against None)
+                if agent.current_node is not None:
+                    self.node_visit_counts[agent.current_node] += 1
+
+
+            # collisions & exits
+            self._update_collisions()
+
+            for agent in self.agents:
+                if agent.exit_time_step is None and self.env.is_exit(agent.current_node):
+                    agent.exit_reached = True
+                    agent.exit_time_step = self.time_step
+
+            # update occupancy snapshot
+            node_occupancy = {}
+            for a in self.agents:
+                node_occupancy[a.current_node] = node_occupancy.get(a.current_node, 0) + 1
+            self.last_node_occupancy = node_occupancy
+            self.max_density_per_step.append(max(node_occupancy.values()) if node_occupancy else 0)
+
+            return
+
+        # Legacy discrete graph-based behaviour (unchanged)
         state = DecisionState(
             time_step=self.time_step,
             node_occupancy=node_occupancy,
@@ -344,13 +432,11 @@ class CrowdSimulation:
             global_density=global_density,
         )
 
-        # 7) each agent chooses desired next node
         desires: Dict[int, Node] = {}
         for agent in self.agents:
             desired = agent.desired_next_node(state)
             desires[agent.id] = desired
 
-        # 8) conflict resolution
         node_to_agents = defaultdict(list)
         for agent_id, node in desires.items():
             node_to_agents[node].append(agent_id)
@@ -360,15 +446,12 @@ class CrowdSimulation:
             if len(agent_ids) == 1:
                 allowed_moves[agent_ids[0]] = node
             else:
-                import random
-
                 winner = random.choice(agent_ids)
                 allowed_moves[winner] = node
                 for loser in agent_ids:
                     if loser != winner:
                         allowed_moves[loser] = None
 
-        # 9) apply movements
         for agent in self.agents:
             target = allowed_moves.get(agent.id, None)
             if target is None:
@@ -376,17 +459,14 @@ class CrowdSimulation:
             agent.move_to(target)
             self.node_visit_counts[agent.current_node] += 1
 
-        # 10) mark exit arrivals (for evacuation metrics)
         for agent in self.agents:
             if agent.exit_time_step is None and self.env.is_exit(agent.current_node):
                 agent.exit_reached = True
                 agent.exit_time_step = self.time_step
 
-        # 11) collisions
         self._update_collisions()
 
     # ---------- metrics & helpers ----------
-
     def _update_collisions(self):
         positions = [agent.get_position() for agent in self.agents]
         n = len(positions)
@@ -402,7 +482,7 @@ class CrowdSimulation:
                     self.agents[j].collisions += 1
         self.total_collisions += step_collisions
 
-    def get_agent_positions(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_agent_positions(self):
         xs, ys = [], []
         for agent in self.agents:
             x, y = agent.get_position()
@@ -410,7 +490,7 @@ class CrowdSimulation:
             ys.append(y)
         return np.array(xs), np.array(ys)
 
-    def get_density_matrix(self) -> np.ndarray:
+    def get_density_matrix(self):
         mat = np.zeros((self.env.height, self.env.width))
         for (x, y), count in self.node_visit_counts.items():
             mat[y, x] = count
@@ -435,7 +515,6 @@ class CrowdSimulation:
         replan_counts = [a.replans for a in self.agents]
         print(f"Average replans/agent: {np.mean(replan_counts):.2f}")
 
-        # Path optimality (based on initial goal)
         ratios = []
         for a in self.agents:
             if a.initial_shortest_path_len > 0:
@@ -443,7 +522,6 @@ class CrowdSimulation:
         if ratios:
             print(f"Avg steps / optimal(initial) ratio: {np.mean(ratios):.2f}")
 
-        # Exit metrics (for evacuation scenarios)
         exit_agents = [a for a in self.agents if a.exit_reached]
         if exit_agents:
             times = [a.exit_time_step for a in exit_agents if a.exit_time_step is not None]

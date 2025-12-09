@@ -347,19 +347,75 @@ class EnvironmentGraph:
     # BUILDERS
     # ------------------------------------------------------------------
 
+    # --- start patch for environment.py (inside EnvironmentGraph class) ---
+
+    def _resolve_world_pos_from_mapmeta(self, mapmeta: MapMeta, gx: int, gy: int):
+        """
+        Robustly resolve a grid coordinate (gx,gy) to world/CAD coordinates.
+
+        Order of attempts:
+         1) if mapmeta.transform is callable -> use it
+         2) elif mapmeta.grid_to_cad is callable -> use it
+         3) check mapmeta.extras for callable keys (common loaders store callables there)
+         4) if bbox + grid_shape available -> construct linear cell-center mapping
+         5) fallback to integer grid coords as floats
+        """
+        try:
+            # 1) direct transform callable (preferred)
+            transform = getattr(mapmeta, "transform", None)
+            if callable(transform):
+                return transform(int(gx), int(gy))
+
+            # 2) grid_to_cad attribute (MapMeta.grid_to_cad)
+            grid_to_cad = getattr(mapmeta, "grid_to_cad", None)
+            if callable(grid_to_cad):
+                return grid_to_cad(int(gx), int(gy))
+
+            # 3) extras keys (some loaders put callables into mapmeta.extras)
+            extras = getattr(mapmeta, "extras", {}) or {}
+            for key in ("grid_to_cad", "grid_to_cad_transform", "grid_to_cad_callable", "transform"):
+                candidate = extras.get(key)
+                if callable(candidate):
+                    return candidate(int(gx), int(gy))
+
+            # 4) bbox + grid_shape linear mapping (cell center)
+            bbox = extras.get("bbox") or getattr(mapmeta, "bbox", None)
+            gs = extras.get("grid_shape") or getattr(mapmeta, "grid_shape", None)
+            if bbox and gs:
+                try:
+                    minx, maxx, miny, maxy = bbox
+                    gw, gh = int(gs[0]), int(gs[1])
+                    if gw <= 0 or gh <= 0:
+                        raise Exception("invalid grid_shape")
+                    cw = (maxx - minx) / gw
+                    ch = (maxy - miny) / gh
+                    wx = float(minx + (gx + 0.5) * cw)
+                    wy = float(miny + (gy + 0.5) * ch)
+                    return wx, wy
+                except Exception:
+                    pass
+        except Exception:
+            # any unexpected failure -> fallback
+            pass
+
+        # final fallback: grid index as float coords
+        return float(gx), float(gy)
+
+
     def _build_open_grid(self, mapmeta: Optional[MapMeta] = None):
         """
-        Build a width x height open grid. If mapmeta is provided, use its transform
-        to compute node positions in world coordinates; otherwise use integer coords.
+        Build an open grid (width x height). Use mapmeta for world positions if available.
+        This method uses the robust resolver above to avoid 'dict is not callable' errors.
         """
         for y in range(self.height):
             for x in range(self.width):
                 if mapmeta is not None:
-                    wx, wy = mapmeta.transform(x, y)
+                    wx, wy = self._resolve_world_pos_from_mapmeta(mapmeta, x, y)
                     pos = (float(wx), float(wy))
                 else:
                     pos = (float(x), float(y))
 
+                # _add_node_with_meta will also attempt to compute cad_pos safely
                 self._add_node_with_meta((x, y), x, y, accessibility="open", node_type="corridor", pos=pos)
 
         for y in range(self.height):
@@ -369,10 +425,11 @@ class EnvironmentGraph:
                 if y + 1 < self.height:
                     self._add_edge_with_defaults((x, y), (x, y + 1))
 
+
     def _build_from_layout(self, layout_matrix: LayoutMatrix, mapmeta: Optional[MapMeta] = None):
         """
-        Build graph from layout_matrix. If mapmeta provided, use it to compute world
-        pos for each node; otherwise fallback to grid coords.
+        Build graph from a 2D layout_matrix. Uses the robust resolver for node positions.
+        Replaces earlier code that assumed mapmeta.transform is always callable.
         """
         if not layout_matrix:
             raise ValueError("layout_matrix is empty")
@@ -402,13 +459,14 @@ class EnvironmentGraph:
                     node_type = "corridor"
 
                 if mapmeta is not None:
-                    wx, wy = mapmeta.transform(x, y)
+                    wx, wy = self._resolve_world_pos_from_mapmeta(mapmeta, x, y)
                     pos = (float(wx), float(wy))
                 else:
                     pos = (float(x), float(y))
 
                 self._add_node_with_meta((x, y), x, y, accessibility=accessibility, node_type=node_type, pos=pos)
 
+        # connect grid neighbours (4-neighbour)
         for y in range(self.height):
             for x in range(self.width):
                 node = (x, y)
@@ -882,3 +940,7 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
     except Exception:
         # be tolerant: don't raise on unexpected structures
         return
+
+
+
+
