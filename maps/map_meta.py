@@ -20,6 +20,7 @@ class MapMeta:
     - transform: callable (gx:int, gy:int) -> (real_x:float, real_y:float)
     - extras: dict for arbitrary loader metadata (door_centers, layers, etc.)
     """
+
     layout: LayoutMatrix
     bbox: BBox
     grid_shape: GridShape

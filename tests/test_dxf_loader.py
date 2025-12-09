@@ -30,7 +30,9 @@ def make_test_dxf(path: Path):
     for y in range(5, 56, 5):
         for x in range(5, 96, 5):
             # short horizontal segment of length 3 units
-            msp.add_line((float(x), float(y)), (float(x + 3), float(y)), dxfattribs={"layer": wall_layer})
+            msp.add_line(
+                (float(x), float(y)), (float(x + 3), float(y)), dxfattribs={"layer": wall_layer}
+            )
 
     # Add a short exit segment near the top edge on exit layer
     msp.add_line((50.0, 60.0), (60.0, 60.0), dxfattribs={"layer": exit_layer})

@@ -101,9 +101,7 @@ def compute_evacuation_kpis(sim: CrowdSimulation):
     Compute evacuation KPIs for scenarios where EVACUATION_MODE is True.
     Returns a dict with times to evacuate 50%, 80%, 90% of agents (if possible).
     """
-    exit_times = [
-        a.exit_time_step for a in sim.agents if a.exit_time_step is not None
-    ]
+    exit_times = [a.exit_time_step for a in sim.agents if a.exit_time_step is not None]
     n = len(sim.agents)
 
     if not exit_times or n == 0:
@@ -114,6 +112,7 @@ def compute_evacuation_kpis(sim: CrowdSimulation):
         }
 
     exit_times_sorted = sorted(exit_times)
+
     def percentile_time(p: float):
         k = int(np.ceil(p * n) - 1)
         if k < 0 or k >= len(exit_times_sorted):
@@ -260,6 +259,7 @@ def overlay_results_on_floorplan(sim, env, top_k: int = 5):
     plt.tight_layout()
     plt.show()
 
+
 def compute_bottlenecks(sim, top_k: int = 10) -> List[Tuple[Node, int]]:
     """
     Return the top_k bottleneck nodes as (node_tuple, visit_count) sorted descending.
@@ -274,6 +274,7 @@ def compute_bottlenecks(sim, top_k: int = 10) -> List[Tuple[Node, int]]:
     top = items[:top_k]
     return top  # list of ((x,y), count)
 
+
 def export_bottlenecks_to_csv(bottlenecks: List[Tuple[Node, int]], out_path: str):
     """
     Save top bottlenecks to CSV with columns: x,y,visits
@@ -283,9 +284,11 @@ def export_bottlenecks_to_csv(bottlenecks: List[Tuple[Node, int]], out_path: str
         writer.writerow(["x", "y", "visits"])
         for (x, y), visits in bottlenecks:
             writer.writerow([x, y, visits])
-            
-            
-def map_cell_to_dxf_coords(cell: Tuple[int, int], env, dxf_bbox: Tuple[float, float, float, float]) -> Tuple[float, float]:
+
+
+def map_cell_to_dxf_coords(
+    cell: Tuple[int, int], env, dxf_bbox: Tuple[float, float, float, float]
+) -> Tuple[float, float]:
     """
     Map a grid cell (x,y) to DXF coordinates using the bbox returned by the DXF loader:
         dxf_bbox = (min_x, max_x, min_y, max_y)

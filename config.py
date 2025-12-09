@@ -17,11 +17,11 @@ SEED = 42
 # ============================================================
 # AGENT BEHAVIOUR
 # ============================================================
-AGENT_REPLAN_PROB = 0.01        # probability an agent picks a new random goal
-COLLISION_DISTANCE = 0.25       # "too close" for collision checks
+AGENT_REPLAN_PROB = 0.01  # probability an agent picks a new random goal
+COLLISION_DISTANCE = 0.25  # "too close" for collision checks
 
 PERCEPTION_RADIUS = 3.0
-GROUP_SIZE = 4                  # leader + followers
+GROUP_SIZE = 4  # leader + followers
 
 AGENT_TYPE_SPEEDS = {
     "leader": 1.0,
@@ -36,7 +36,7 @@ GLOBAL_DENSITY_REPLAN_THRESHOLD = 2.0
 # ============================================================
 # EDGE / CONGESTION MODEL
 # ============================================================
-EDGE_BASE_CAPACITY = 5          # comfortable edge capacity
+EDGE_BASE_CAPACITY = 5  # comfortable edge capacity
 
 # ============================================================
 # DYNAMIC ENVIRONMENT
@@ -71,25 +71,25 @@ NAV_STRATEGY_MIX = {
 # "grid"   → generate simple grid
 # "raster" → load PNG/JPG via floorplan_image_loader.py
 # "dxf"    → load CAD DXF via dxf_loader.py
-MAP_MODE = "dxf"
-MAP_FILE = "maps/examples/call_center_pt2.dxf"  # path to PNG/JPG/DXF file
+MAP_MODE = "raster"
+MAP_FILE = "maps/examples/example_floorplan.png"  # path to PNG/JPG/DXF file
 
 # ============================================================
 # ============================================================
 # RASTER FLOORPLAN PARAMETERS  (Pillow + NumPy ONLY)
 # ============================================================
-RASTER_DOWNSCALE_FACTOR = 5       # shrink large floorplans to speed processing
+RASTER_DOWNSCALE_FACTOR = 5  # shrink large floorplans to speed processing
 
 # Thresholds used by pure-PIL loader:
-RASTER_WALL_THRESHOLD = 170       # luma <= this → wall candidate (Otsu overrides this)
-RASTER_EXIT_GREEN_MIN = 200       # green >= this → exit candidate (simple RGB rule)
+RASTER_WALL_THRESHOLD = 170  # luma <= this → wall candidate (Otsu overrides this)
+RASTER_EXIT_GREEN_MIN = 200  # green >= this → exit candidate (simple RGB rule)
 
 # Exit color heuristics
 RASTER_USE_COLOR_SEGMENTATION = True  # simple RGB segmentation
 RASTER_EXIT_COLOR_RGB = (0, 255, 0)
 
 # Small component removal
-RASTER_MIN_WALL_AREA = 3          # remove wall specks smaller than this (post-otsu)
+RASTER_MIN_WALL_AREA = 3  # remove wall specks smaller than this (post-otsu)
 
 # Colors for potential debug rendering
 RASTER_WALL_COLOR_RGB = (0, 0, 0)
@@ -105,22 +105,22 @@ DXF_GRID_WIDTH = 110
 DXF_GRID_HEIGHT = 70
 
 # Your DXF layer naming:
-DXF_WALL_LAYERS = ["0"]          # your actual wall layer
-DXF_EXIT_LAYERS = ["WALL"]       # short lines drawn at exit locations
-DXF_DOOR_LAYERS = []             # fill this if your DXF has an explicit DOOR layer
+DXF_WALL_LAYERS = ["0"]  # your actual wall layer
+DXF_EXIT_LAYERS = ["WALL"]  # short lines drawn at exit locations
+DXF_DOOR_LAYERS = []  # fill this if your DXF has an explicit DOOR layer
 
 # Rasterization thresholds (in *grid cell units*, scaled to CAD units inside loader)
-DXF_WALL_DISTANCE_THRESHOLD = 0.4     # how close grid-center must be to a wall segment
+DXF_WALL_DISTANCE_THRESHOLD = 0.4  # how close grid-center must be to a wall segment
 DXF_EXIT_DISTANCE_THRESHOLD = 0.4
 
 # NEW: wall thickness handling (CAD units)
-DXF_WALL_BUFFER = 0.0                 # radius added around wall segments
+DXF_WALL_BUFFER = 0.0  # radius added around wall segments
 
 # NEW: endpoint merging
-DXF_ENDPOINT_SNAP_DISTANCE = 0.5       # endpoints closer than this snap together
+DXF_ENDPOINT_SNAP_DISTANCE = 0.5  # endpoints closer than this snap together
 
 # NEW: door detection via gap detection (CAD units)
-DXF_DOOR_GAP_THRESHOLD = 1.0           # small gap between wall segment endpoints → possible door
+DXF_DOOR_GAP_THRESHOLD = 1.0  # small gap between wall segment endpoints → possible door
 
 # ============================================================
 # PERFORMANCE SWITCHES

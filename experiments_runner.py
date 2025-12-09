@@ -19,8 +19,13 @@ from simulation import CrowdSimulation
 from analysis import compute_evacuation_metrics  # optional, if present
 
 
-def run_single_trial(env, num_agents: int, evac_target_fraction: float = 0.9,
-                     max_steps: Optional[int] = None, verbose: bool = False):
+def run_single_trial(
+    env,
+    num_agents: int,
+    evac_target_fraction: float = 0.9,
+    max_steps: Optional[int] = None,
+    verbose: bool = False,
+):
     """
     Run one trial of the simulation.
 
@@ -46,14 +51,20 @@ def run_single_trial(env, num_agents: int, evac_target_fraction: float = 0.9,
     target_count = int(np.ceil(evac_target_fraction * num_agents)) if evac_target_fraction else None
 
     if verbose:
-        print(f"[trial] starting: num_agents={num_agents}, evac_target={evac_target_fraction}, max_steps={max_steps}")
+        print(
+            f"[trial] starting: num_agents={num_agents}, evac_target={evac_target_fraction}, max_steps={max_steps}"
+        )
 
     # run loop
     start = time.time()
     while True:
         sim.step()
         # compute how many agents have evacuated (we assume Agent.exit_time or agent.exited property)
-        exited = sum(1 for a in sim.agents if getattr(a, "exited", False) or getattr(a, "exit_time_step", None) is not None)
+        exited = sum(
+            1
+            for a in sim.agents
+            if getattr(a, "exited", False) or getattr(a, "exit_time_step", None) is not None
+        )
         if verbose and sim.time_step % 50 == 0:
             print(f" step {sim.time_step}  exited={exited}/{num_agents}")
 
@@ -122,14 +133,16 @@ def aggregate_trials(trial_results: List[dict]) -> dict:
 
     per_trial_summary = []
     for i, tr in enumerate(trial_results):
-        per_trial_summary.append({
-            "trial": i,
-            "time_steps": tr["time_steps"],
-            "exited_fraction": tr["agents_exited_fraction"],
-            "total_collisions": tr["total_collisions"],
-            "elapsed_sec": tr["elapsed_sec"],
-            "sum_visits": int(np.sum(tr["density"])),
-        })
+        per_trial_summary.append(
+            {
+                "trial": i,
+                "time_steps": tr["time_steps"],
+                "exited_fraction": tr["agents_exited_fraction"],
+                "total_collisions": tr["total_collisions"],
+                "elapsed_sec": tr["elapsed_sec"],
+                "sum_visits": int(np.sum(tr["density"])),
+            }
+        )
 
     return {
         "avg_density": avg_density,
@@ -139,7 +152,9 @@ def aggregate_trials(trial_results: List[dict]) -> dict:
     }
 
 
-def find_topk_bottleneck_cells(avg_density: np.ndarray, k: int = 10) -> List[Tuple[int, int, float]]:
+def find_topk_bottleneck_cells(
+    avg_density: np.ndarray, k: int = 10
+) -> List[Tuple[int, int, float]]:
     """
     Given avg_density (H x W), return top-k cells as list of tuples:
       (row_index, col_index, avg_visit_value), sorted by value desc.
@@ -179,18 +194,22 @@ def plot_avg_heatmap_on_axes(ax, avg_density: np.ndarray, env, alpha=0.55, cmap=
     Uses same extent as the visualization code: (-0.5, width-0.5, -0.5, height-0.5)
     """
     extent = (-0.5, env.width - 0.5, -0.5, env.height - 0.5)
-    im = ax.imshow(avg_density, origin="lower", extent=extent, interpolation="nearest", cmap=cmap, alpha=alpha)
+    im = ax.imshow(
+        avg_density, origin="lower", extent=extent, interpolation="nearest", cmap=cmap, alpha=alpha
+    )
     return im
 
 
-def run_multiple_trials(env,
-                        trials: int = 5,
-                        num_agents: int = 60,
-                        evac_target_fraction: float = 0.9,
-                        max_steps: Optional[int] = None,
-                        out_dir: str = "experiments/output",
-                        top_k_bottlenecks: int = 10,
-                        verbose: bool = True):
+def run_multiple_trials(
+    env,
+    trials: int = 5,
+    num_agents: int = 60,
+    evac_target_fraction: float = 0.9,
+    max_steps: Optional[int] = None,
+    out_dir: str = "experiments/output",
+    top_k_bottlenecks: int = 10,
+    verbose: bool = True,
+):
     """
     Run `trials` independent runs on the same `env`, aggregate and produce results.
 
@@ -200,9 +219,13 @@ def run_multiple_trials(env,
     for t in range(trials):
         if verbose:
             print(f"=== Running trial {t+1}/{trials} ===")
-        tr = run_single_trial(env, num_agents=num_agents,
-                              evac_target_fraction=evac_target_fraction,
-                              max_steps=max_steps, verbose=verbose)
+        tr = run_single_trial(
+            env,
+            num_agents=num_agents,
+            evac_target_fraction=evac_target_fraction,
+            max_steps=max_steps,
+            verbose=verbose,
+        )
         all_results.append(tr)
 
     aggregated = aggregate_trials(all_results)
@@ -236,7 +259,16 @@ def run_multiple_trials(env,
     # annotate top cells
     for idx, (r, c, v) in enumerate(top_cells):
         # map grid indices to node centers (x = c, y = r)
-        ax.scatter([c], [r], s=80, marker="o", facecolors="none", edgecolors="cyan", linewidths=1.6, zorder=5)
+        ax.scatter(
+            [c],
+            [r],
+            s=80,
+            marker="o",
+            facecolors="none",
+            edgecolors="cyan",
+            linewidths=1.6,
+            zorder=5,
+        )
         ax.text(c + 0.2, r + 0.2, f"B{idx+1}", color="white", fontsize=9, zorder=6)
 
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Avg visits")

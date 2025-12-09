@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import ezdxf
 
+
 def prompt_multiple(options, prompt_text):
     print(prompt_text)
     print("Enter comma-separated indices (e.g. 0,2,3) or leave blank to skip.")
@@ -29,6 +30,7 @@ def prompt_multiple(options, prompt_text):
             if 0 <= idx < len(options):
                 inds.append(options[idx])
     return inds
+
 
 def main():
     if len(sys.argv) < 2:
@@ -47,6 +49,7 @@ def main():
     with open(out, "w", encoding="utf8") as fh:
         json.dump(mapping, fh, indent=2)
     print(f"Wrote mapping to {out}")
+
 
 if __name__ == "__main__":
     main()

@@ -103,7 +103,10 @@ def _collect_segments(doc, layer_names: Sequence[str]) -> List[Segment]:
                             segments.append((p1, p2))
                         elif bt in ("LWPOLYLINE", "POLYLINE"):
                             try:
-                                pts = [(ins_x + float(p[0]) * sx, ins_y + float(p[1]) * sy) for p in be.get_points()]
+                                pts = [
+                                    (ins_x + float(p[0]) * sx, ins_y + float(p[1]) * sy)
+                                    for p in be.get_points()
+                                ]
                                 for i in range(len(pts) - 1):
                                     segments.append((pts[i], pts[i + 1]))
                             except Exception:
@@ -329,7 +332,9 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
     # If wall_segments empty, fallback to collecting ALL segments so user still gets something
     if not wall_segments:
         # collect everything and treat by layer name heuristics later
-        all_segments = _collect_segments(doc, [])  # empty list means collect nothing, so we need to collect all layers manually
+        all_segments = _collect_segments(
+            doc, []
+        )  # empty list means collect nothing, so we need to collect all layers manually
         # alternative: iterate modelspace and collect by default behavior (we reuse previous collector but with wanted==empty we skip)
         # Simpler: manual collection of all lines/polylines
         msp = doc.modelspace()
@@ -338,7 +343,12 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
             try:
                 t = e.dxftype()
                 if t == "LINE":
-                    all_seg.append(((float(e.dxf.start.x), float(e.dxf.start.y)), (float(e.dxf.end.x), float(e.dxf.end.y))))
+                    all_seg.append(
+                        (
+                            (float(e.dxf.start.x), float(e.dxf.start.y)),
+                            (float(e.dxf.end.x), float(e.dxf.end.y)),
+                        )
+                    )
                 elif t in ("LWPOLYLINE", "POLYLINE"):
                     try:
                         pts = [(float(p[0]), float(p[1])) for p in e.get_points()]
@@ -351,7 +361,9 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
         wall_segments = all_seg
 
     # Merge / snap segments to remove tiny duplicates
-    snap_tol = float(getattr(__import__("config"), "DXF_ENDPOINT_SNAP_DISTANCE", DXF_ENDPOINT_SNAP_DISTANCE))
+    snap_tol = float(
+        getattr(__import__("config"), "DXF_ENDPOINT_SNAP_DISTANCE", DXF_ENDPOINT_SNAP_DISTANCE)
+    )
     merged_wall_segments = _snap_and_merge_segments(wall_segments, snap_tol)
 
     # Door candidates: from explicit door layers OR heuristic gaps
@@ -361,7 +373,9 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
         for a, b in door_segments:
             door_centers.append(((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0))
     else:
-        gap_thresh = float(getattr(__import__("config"), "DXF_DOOR_GAP_THRESHOLD", DXF_DOOR_GAP_THRESHOLD))
+        gap_thresh = float(
+            getattr(__import__("config"), "DXF_DOOR_GAP_THRESHOLD", DXF_DOOR_GAP_THRESHOLD)
+        )
         door_centers = _detect_doors_from_wall_gaps(merged_wall_segments, gap_thresh)
 
     # Compute extents & transform to grid
@@ -386,8 +400,22 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
     cell_size = min(cell_w, cell_h)
 
     # thresholds in CAD units
-    wall_thresh = float(getattr(__import__("config"), "DXF_WALL_DISTANCE_THRESHOLD", DXF_WALL_DISTANCE_THRESHOLD)) * cell_size
-    exit_thresh = float(getattr(__import__("config"), "DXF_EXIT_DISTANCE_THRESHOLD", DXF_EXIT_DISTANCE_THRESHOLD)) * cell_size
+    wall_thresh = (
+        float(
+            getattr(
+                __import__("config"), "DXF_WALL_DISTANCE_THRESHOLD", DXF_WALL_DISTANCE_THRESHOLD
+            )
+        )
+        * cell_size
+    )
+    exit_thresh = (
+        float(
+            getattr(
+                __import__("config"), "DXF_EXIT_DISTANCE_THRESHOLD", DXF_EXIT_DISTANCE_THRESHOLD
+            )
+        )
+        * cell_size
+    )
     wall_buffer = float(getattr(__import__("config"), "DXF_WALL_BUFFER", DXF_WALL_BUFFER))
 
     # Build layout grid (row major: y from top->bottom as earlier convention: row 0 = top)
@@ -430,7 +458,12 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
         "grid_width": grid_w,
         "grid_height": grid_h,
         "cell_size": cell_size,
-        "cad_to_grid": {"min_x": min_x, "min_y": min_y, "scale_x": grid_w / width, "scale_y": grid_h / height},
+        "cad_to_grid": {
+            "min_x": min_x,
+            "min_y": min_y,
+            "scale_x": grid_w / width,
+            "scale_y": grid_h / height,
+        },
         "layers_found": list(set([getattr(e.dxf, "layer", "") for e in doc.modelspace()])),
         "walls_layer_candidates": wall_layers,
         "doors_layer_candidates": door_layers,
@@ -446,7 +479,6 @@ def load_dxf_floorplan_with_meta(path: str) -> Tuple[LayoutMatrix, Dict[str, Any
 def load_dxf_floorplan_to_layout(path: str) -> LayoutMatrix:
     layout, _meta = load_dxf_floorplan_with_meta(path)
     return layout
-
 
 
 def load_dxf_floorplan_mapmeta(path: str) -> MapMeta:
@@ -474,7 +506,9 @@ def load_dxf_floorplan_mapmeta(path: str) -> MapMeta:
     # stash original metadata under 'raw_meta'
     extras["raw_meta"] = meta
 
-    return MapMeta(layout=layout, bbox=bbox, grid_shape=(grid_w, grid_h), transform=transform, extras=extras)
+    return MapMeta(
+        layout=layout, bbox=bbox, grid_shape=(grid_w, grid_h), transform=transform, extras=extras
+    )
 
 
 # Backwards-compatible helper: old API still works

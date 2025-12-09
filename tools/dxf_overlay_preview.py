@@ -26,10 +26,11 @@ import ezdxf
 from maps.dxf_loader import load_dxf_floorplan_with_meta
 
 # colors
-CAD_COLOR = (180, 180, 180)   # light gray for CAD lines
-WALL_COLOR = (255, 0, 0)      # red for walls
-EXIT_COLOR = (0, 192, 0)      # green for exits
+CAD_COLOR = (180, 180, 180)  # light gray for CAD lines
+WALL_COLOR = (255, 0, 0)  # red for walls
+EXIT_COLOR = (0, 192, 0)  # green for exits
 BG_COLOR = (255, 255, 255)
+
 
 def cad_to_image_coords(x, y, bbox, img_w, img_h):
     """
@@ -41,11 +42,14 @@ def cad_to_image_coords(x, y, bbox, img_w, img_h):
     min_x, max_x, min_y, max_y = bbox
     cad_w = max_x - min_x
     cad_h = max_y - min_y
-    if cad_w == 0: cad_w = 1.0
-    if cad_h == 0: cad_h = 1.0
+    if cad_w == 0:
+        cad_w = 1.0
+    if cad_h == 0:
+        cad_h = 1.0
     px = int(round((x - min_x) / cad_w * (img_w - 1)))
     py = int(round((max_y - y) / cad_h * (img_h - 1)))
     return px, py
+
 
 def draw_dxf_geometry(draw, doc, bbox, img_w, img_h):
     msp = doc.modelspace()
@@ -68,6 +72,7 @@ def draw_dxf_geometry(draw, doc, bbox, img_w, img_h):
                     draw.line(pix, fill=CAD_COLOR, width=1)
         except Exception:
             continue
+
 
 def main():
     if len(sys.argv) < 2:
@@ -117,6 +122,7 @@ def main():
     out = p.with_suffix(".overlay.png")
     im.save(out)
     print("Saved overlay:", out)
+
 
 if __name__ == "__main__":
     main()

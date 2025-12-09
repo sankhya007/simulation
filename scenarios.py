@@ -90,7 +90,6 @@ def configure_environment_for_active_scenario(env, preset):
             env.mark_exit(n)
 
 
-
 def load_and_apply_scenario(name: str):
     """
     Loads MapMeta → builds EnvironmentGraph → applies scenario overrides.
@@ -107,12 +106,7 @@ def load_and_apply_scenario(name: str):
     grid_w, grid_h = mm.grid_shape
 
     # Build env using world coords
-    env = EnvironmentGraph(
-        width=grid_w,
-        height=grid_h,
-        layout_matrix=layout,
-        mapmeta=mm
-    )
+    env = EnvironmentGraph(width=grid_w, height=grid_h, layout_matrix=layout, mapmeta=mm)
 
     # Apply scenario modifiers (speed, exits, density, evacuation, blocked nodes, etc.)
     configure_environment_for_active_scenario(env, preset)

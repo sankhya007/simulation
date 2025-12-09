@@ -24,7 +24,6 @@ from analysis import (
     plot_metrics_by_agent_type,
     print_evacuation_report,
     overlay_results_on_floorplan,
-
 )
 from scenarios import configure_environment_for_active_scenario
 
@@ -32,6 +31,7 @@ from scenarios import configure_environment_for_active_scenario
 SHOW_DENSITY_HEATMAP = True
 EDGE_ALPHA = 0.25
 AGENT_SIZE = 30
+
 
 def _get_node_world_pos(env: EnvironmentGraph, node: Tuple[int, int]) -> Tuple[float, float]:
     """Return world pos for a node (x,y) using graph node attribute 'pos'."""
@@ -41,6 +41,7 @@ def _get_node_world_pos(env: EnvironmentGraph, node: Tuple[int, int]) -> Tuple[f
         # fallback to grid coords
         return float(node[0]), float(node[1])
     return float(pos[0]), float(pos[1])
+
 
 def _get_agent_world_pos(agent: Any, env: EnvironmentGraph) -> Tuple[float, float]:
     """
@@ -83,7 +84,14 @@ def _get_agent_world_pos(agent: Any, env: EnvironmentGraph) -> Tuple[float, floa
     # fallback
     return 0.0, 0.0
 
-def run_visual_simulation(env_or_tuple: Any, agents: Optional[int] = None, steps: Optional[int] = None, interval_ms: int = 200, show_trails: bool = False):
+
+def run_visual_simulation(
+    env_or_tuple: Any,
+    agents: Optional[int] = None,
+    steps: Optional[int] = None,
+    interval_ms: int = 200,
+    show_trails: bool = False,
+):
     """
     Visual simulation runner (matplotlib animation).
 
@@ -175,7 +183,15 @@ def run_visual_simulation(env_or_tuple: Any, agents: Optional[int] = None, steps
     ax.set_ylim(min_y - dy * pad, max_y + dy * pad)
 
     # Text for status
-    status_text = ax.text(0.01, 0.99, "", transform=ax.transAxes, va="top", ha="left", bbox=dict(facecolor="white", alpha=0.6))
+    status_text = ax.text(
+        0.01,
+        0.99,
+        "",
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        bbox=dict(facecolor="white", alpha=0.6),
+    )
 
     step_counter = {"t": 0}
 
@@ -183,7 +199,7 @@ def run_visual_simulation(env_or_tuple: Any, agents: Optional[int] = None, steps
         # Run simulation step (stop if reached max_steps)
         if step_counter["t"] >= max_steps:
             ani.event_source.stop()
-            return agent_scatter,
+            return (agent_scatter,)
 
         sim.step()
 
@@ -215,6 +231,7 @@ def run_visual_simulation(env_or_tuple: Any, agents: Optional[int] = None, steps
 
     plt.show()
 
+
 def build_world_to_screen(env, width=900, height=700, margin=20):
     """
     Computes a transform that maps world coords (from MapMeta) to screen coords.
@@ -239,7 +256,7 @@ def build_world_to_screen(env, width=900, height=700, margin=20):
 
     def world_to_screen(wx, wy):
         sx = margin + (wx - min_x) * scale
-        sy = margin + (max_y - wy) * scale   # invert Y (screen down, world up)
+        sy = margin + (max_y - wy) * scale  # invert Y (screen down, world up)
         return sx, sy
 
     return world_to_screen, width, height
@@ -276,9 +293,7 @@ def run_visual_simulation(env):
     blocked_nodes = get_blocked_nodes()
 
     exit_xy = np.array([pos[n] for n in exit_nodes]) if exit_nodes else np.empty((0, 2))
-    blocked_xy = (
-        np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
-    )
+    blocked_xy = np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
 
     # Style
     plt.style.use("dark_background")
@@ -438,22 +453,46 @@ def run_visual_simulation(env):
     legend_elements = [
         Patch(facecolor="limegreen", edgecolor="black", label="Exit node"),
         Patch(facecolor="red", edgecolor="darkred", label="Blocked node"),
-        Line2D([0], [0], marker="o", color="w",
-               label="Leader",
-               markerfacecolor=type_to_color["leader"],
-               markeredgecolor="black", markersize=8),
-        Line2D([0], [0], marker="o", color="w",
-               label="Follower",
-               markerfacecolor=type_to_color["follower"],
-               markeredgecolor="black", markersize=8),
-        Line2D([0], [0], marker="o", color="w",
-               label="Normal",
-               markerfacecolor=type_to_color["normal"],
-               markeredgecolor="black", markersize=8),
-        Line2D([0], [0], marker="o", color="w",
-               label="Panic",
-               markerfacecolor=type_to_color["panic"],
-               markeredgecolor="black", markersize=8),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="Leader",
+            markerfacecolor=type_to_color["leader"],
+            markeredgecolor="black",
+            markersize=8,
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="Follower",
+            markerfacecolor=type_to_color["follower"],
+            markeredgecolor="black",
+            markersize=8,
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="Normal",
+            markerfacecolor=type_to_color["normal"],
+            markeredgecolor="black",
+            markersize=8,
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="Panic",
+            markerfacecolor=type_to_color["panic"],
+            markeredgecolor="black",
+            markersize=8,
+        ),
     ]
     ax.legend(handles=legend_elements, loc="upper right", framealpha=0.9, fontsize=9)
 
@@ -478,7 +517,9 @@ def run_visual_simulation(env):
         blocked_nodes = get_blocked_nodes()
 
         exit_xy = np.array([pos[n] for n in exit_nodes]) if exit_nodes else np.empty((0, 2))
-        blocked_xy = np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
+        blocked_xy = (
+            np.array([pos[n] for n in blocked_nodes]) if blocked_nodes else np.empty((0, 2))
+        )
 
         exit_scat.set_offsets(exit_xy)
         blocked_scat.set_offsets(blocked_xy)
@@ -546,7 +587,6 @@ def run_visual_simulation(env):
         pass
 
 
-
 def show_density_heatmap(sim: CrowdSimulation):
     density = sim.get_density_matrix()
 
@@ -594,4 +634,3 @@ def overlay_results_on_image(sim, ax, map_path: str):
 
     # Draw the image under everything
     ax.imshow(img_ds, origin="lower", extent=extent, zorder=-1, interpolation="nearest", alpha=0.9)
-    

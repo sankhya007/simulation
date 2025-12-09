@@ -31,7 +31,7 @@ EdgeKey = Tuple[Node, Node]
 
 class CrowdSimulation:
     """Manages the whole crowd, interactions, and metrics."""
-    
+
     def get_metrics_summary(self) -> Dict[str, dict]:
         """
         Compute global, per-agent-type, and per-strategy metrics.
@@ -77,6 +77,7 @@ class CrowdSimulation:
 
         # group by agent_type
         from collections import defaultdict
+
         agents_by_type = defaultdict(list)
         for a in self.agents:
             agents_by_type[a.agent_type].append(a)
@@ -142,10 +143,6 @@ class CrowdSimulation:
             "by_strategy": by_strategy,
         }
 
-
-
-
-
     def __init__(self, env: EnvironmentGraph, num_agents: int):
         self.env = env
         self.agents: List[Agent] = []
@@ -177,11 +174,7 @@ class CrowdSimulation:
             n_cong = int(num_agents * frac_cong)
             n_safe = num_agents - n_short - n_cong
 
-            strategies = (
-                ["shortest"] * n_short
-                + ["congestion"] * n_cong
-                + ["safe"] * n_safe
-            )
+            strategies = ["shortest"] * n_short + ["congestion"] * n_cong + ["safe"] * n_safe
             random.shuffle(strategies)
         else:
             # uniform population of a single strategy
@@ -230,7 +223,6 @@ class CrowdSimulation:
             )
             agent_index += 1
 
-
     # ---------- dynamic events ----------
 
     def _apply_dynamic_events(self, node_occupancy: Dict[Node, int]):
@@ -246,8 +238,7 @@ class CrowdSimulation:
             candidates = [
                 n
                 for n, data in self.env.graph.nodes(data=True)
-                if self.env.is_accessible(n)
-                and node_occupancy.get(n, 0) == 0
+                if self.env.is_accessible(n) and node_occupancy.get(n, 0) == 0
             ]
             if candidates and random.random() < BLOCK_NODE_PROB:
                 node = random.choice(candidates)
@@ -307,7 +298,7 @@ class CrowdSimulation:
         # 2) apply dynamic environment events
         if ENABLE_DYNAMIC_EVENTS:
             self._apply_dynamic_events(node_occupancy)
-            
+
         # 3) edge occupancy approximation from node occupancy, then update weights
         edge_occupancy: Dict[EdgeKey, int] = {}
         edge_over_capacity: Dict[EdgeKey, bool] = {}
@@ -319,7 +310,7 @@ class CrowdSimulation:
 
                 # compare to capacity
                 cap = self.env.graph[u][v].get("max_capacity", EDGE_BASE_CAPACITY)
-                over = (occ > cap)
+                over = occ > cap
                 edge_over_capacity[(u, v)] = over
 
                 # update dynamic weight

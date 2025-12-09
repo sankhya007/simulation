@@ -1,0 +1,7 @@
+[
+  "tests/test_dxf_loader.py::test_dxf_loader_generates_layout",
+  "tests/test_graph_builder.py::test_centerline_or_fallback",
+  "tests/test_graph_builder.py::test_grid_graph_basic",
+  "tests/test_raster_loader.py::test_raster_loader_produces_expected_layout",
+  "tests/test_simulation_step.py::test_simulation_step_basic"
+]

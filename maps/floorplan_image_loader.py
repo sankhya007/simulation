@@ -71,7 +71,7 @@ def _remove_small_components(binary: np.ndarray, min_area: int) -> np.ndarray:
                         comp_pixels.append((ny, nx))
             area = len(comp_pixels)
             if area >= min_area:
-                for (py, px) in comp_pixels:
+                for py, px in comp_pixels:
                     cleaned[py, px] = 1
             label_id += 1
     return cleaned
@@ -113,7 +113,11 @@ def load_floorplan_image_to_layout(path: str) -> LayoutMatrix:
         wall_mask = _remove_small_components(wall_mask, min_area)
 
     # Exit detection by RGB
-    exit_mask = _detect_exit_by_rgb(img_arr) if getattr(config, "RASTER_USE_COLOR_SEGMENTATION", True) else np.zeros((h, w), dtype=np.uint8)
+    exit_mask = (
+        _detect_exit_by_rgb(img_arr)
+        if getattr(config, "RASTER_USE_COLOR_SEGMENTATION", True)
+        else np.zeros((h, w), dtype=np.uint8)
+    )
 
     # Build layout matrix
     layout: LayoutMatrix = []
@@ -129,6 +133,7 @@ def load_floorplan_image_to_layout(path: str) -> LayoutMatrix:
         layout.append(row)
 
     return layout
+
 
 def load_floorplan_image_to_mapmeta(path: str) -> MapMeta:
     """
@@ -153,7 +158,9 @@ def load_floorplan_image_to_mapmeta(path: str) -> MapMeta:
         "downscale": getattr(__import__("config"), "RASTER_DOWNSCALE_FACTOR", None),
     }
 
-    return MapMeta(layout=layout, bbox=bbox, grid_shape=(grid_w, grid_h), transform=transform, extras=extras)
+    return MapMeta(
+        layout=layout, bbox=bbox, grid_shape=(grid_w, grid_h), transform=transform, extras=extras
+    )
 
 
 # legacy API preserved

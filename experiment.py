@@ -75,6 +75,7 @@ def _aggregate_runs(run_metrics: List[Dict]) -> Dict:
     """
     Compute mean ± std over multiple runs.
     """
+
     def mean_std(values: List[Optional[float]]) -> Tuple[Optional[float], Optional[float]]:
         vals = [v for v in values if v is not None]
         if not vals:
@@ -119,15 +120,33 @@ def print_experiment_summary(
     print(f"Time steps : {g.get('time_steps')}\n")
 
     print("--- Aggregated metrics (mean ± std) ---")
-    print(f"avg_steps               : {_format_mean_std(agg['avg_steps']['mean'], agg['avg_steps']['std'])}")
-    print(f"avg_waits               : {_format_mean_std(agg['avg_waits']['mean'], agg['avg_waits']['std'])}")
-    print(f"avg_replans             : {_format_mean_std(agg['avg_replans']['mean'], agg['avg_replans']['std'])}")
-    print(f"avg_collisions_per_agent: {_format_mean_std(agg['avg_collisions_per_agent']['mean'], agg['avg_collisions_per_agent']['std'])}")
-    print(f"exit_rate               : {_format_mean_std(agg['exit_rate']['mean'], agg['exit_rate']['std'])}")
-    print(f"avg_exit_time           : {_format_mean_std(agg['avg_exit_time']['mean'], agg['avg_exit_time']['std'])}")
-    print(f"avg_steps_over_optimal  : {_format_mean_std(agg['avg_steps_over_optimal']['mean'], agg['avg_steps_over_optimal']['std'])}")
-    print(f"max_density_peak        : {_format_mean_std(agg['max_density_peak']['mean'], agg['max_density_peak']['std'])}")
-    print(f"total_collisions        : {_format_mean_std(agg['total_collisions']['mean'], agg['total_collisions']['std'])}\n")
+    print(
+        f"avg_steps               : {_format_mean_std(agg['avg_steps']['mean'], agg['avg_steps']['std'])}"
+    )
+    print(
+        f"avg_waits               : {_format_mean_std(agg['avg_waits']['mean'], agg['avg_waits']['std'])}"
+    )
+    print(
+        f"avg_replans             : {_format_mean_std(agg['avg_replans']['mean'], agg['avg_replans']['std'])}"
+    )
+    print(
+        f"avg_collisions_per_agent: {_format_mean_std(agg['avg_collisions_per_agent']['mean'], agg['avg_collisions_per_agent']['std'])}"
+    )
+    print(
+        f"exit_rate               : {_format_mean_std(agg['exit_rate']['mean'], agg['exit_rate']['std'])}"
+    )
+    print(
+        f"avg_exit_time           : {_format_mean_std(agg['avg_exit_time']['mean'], agg['avg_exit_time']['std'])}"
+    )
+    print(
+        f"avg_steps_over_optimal  : {_format_mean_std(agg['avg_steps_over_optimal']['mean'], agg['avg_steps_over_optimal']['std'])}"
+    )
+    print(
+        f"max_density_peak        : {_format_mean_std(agg['max_density_peak']['mean'], agg['max_density_peak']['std'])}"
+    )
+    print(
+        f"total_collisions        : {_format_mean_std(agg['total_collisions']['mean'], agg['total_collisions']['std'])}\n"
+    )
 
     print("--- Evacuation times (if applicable) ---")
     print(f"Time to evacuate 50%    : {_format_mean_std(agg['t50']['mean'], agg['t50']['std'])}")
@@ -152,6 +171,7 @@ def run_experiment_for_scenario(scenario_name: str, runs: int):
 
 
 # ---------- Strategy comparison ----------
+
 
 def run_strategy_comparison(scenario_name: str, runs: int):
     """

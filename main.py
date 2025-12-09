@@ -25,7 +25,11 @@ from typing import Any, Dict, List, Tuple, Optional
 from maps.map_loader import load_mapmeta_from_config
 
 # Project imports
-from scenarios import SCENARIO_PRESETS, load_and_apply_scenario, configure_environment_for_active_scenario
+from scenarios import (
+    SCENARIO_PRESETS,
+    load_and_apply_scenario,
+    configure_environment_for_active_scenario,
+)
 from visualization import run_visual_simulation, show_density_heatmap
 from environment import EnvironmentGraph
 from simulation import CrowdSimulation
@@ -48,7 +52,13 @@ def list_scenarios():
         print(" -", k)
 
 
-def _save_overlay_and_csv(sim: CrowdSimulation, env: EnvironmentGraph, bottlenecks: List[Tuple[int, int]], out_dir: Path, tag: str):
+def _save_overlay_and_csv(
+    sim: CrowdSimulation,
+    env: EnvironmentGraph,
+    bottlenecks: List[Tuple[int, int]],
+    out_dir: Path,
+    tag: str,
+):
     """
     Save overlay image and CSV with bottleneck coordinates.
     - bottlenecks: list of node ids or (x,y) cell indices depending on analysis output.
@@ -74,7 +84,11 @@ def _save_overlay_and_csv(sim: CrowdSimulation, env: EnvironmentGraph, bottlenec
         writer.writerow(["rank", "node_or_cell", "x", "y", "notes"])
         for i, b in enumerate(bottlenecks, start=1):
             # b may be node id, (x,y), or (node,score)
-            if isinstance(b, tuple) and len(b) >= 2 and all(isinstance(x, (int, float)) for x in b[:2]):
+            if (
+                isinstance(b, tuple)
+                and len(b) >= 2
+                and all(isinstance(x, (int, float)) for x in b[:2])
+            ):
                 x, y = b[0], b[1]
                 writer.writerow([i, f"cell", x, y, ""])
             else:
@@ -93,7 +107,15 @@ def _save_overlay_and_csv(sim: CrowdSimulation, env: EnvironmentGraph, bottlenec
         print("overlay_results_on_image not available; skipping image overlay.")
 
 
-def _run_single_trial(scenario_name: str, agents: Optional[int], steps: Optional[int], target_percent: Optional[float], trial_index: int, out_dir: Path = Path("."), overlay: bool = False) -> Dict[str, Any]:
+def _run_single_trial(
+    scenario_name: str,
+    agents: Optional[int],
+    steps: Optional[int],
+    target_percent: Optional[float],
+    trial_index: int,
+    out_dir: Path = Path("."),
+    overlay: bool = False,
+) -> Dict[str, Any]:
     """
     Run a single trial (no visualization). Returns a result dict with summary & bottlenecks.
     """
@@ -165,19 +187,33 @@ def _run_single_trial(scenario_name: str, agents: Optional[int], steps: Optional
     }
     return summary
 
-grid_w, grid_h = mm.grid_shape
-env = EnvironmentGraph(
-    width=grid_w,
-    height=grid_h,
-    layout_matrix=layout,
-    mapmeta=mm
-)
 
-def run_batch(scenario_name: str, trials: int = 5, workers: int = 2, agents: int = None, steps: int = None, target_percent: float = None, out_dir: str = "out", overlay: bool = False):
+grid_w, grid_h = mm.grid_shape
+env = EnvironmentGraph(width=grid_w, height=grid_h, layout_matrix=layout, mapmeta=mm)
+
+
+def run_batch(
+    scenario_name: str,
+    trials: int = 5,
+    workers: int = 2,
+    agents: int = None,
+    steps: int = None,
+    target_percent: float = None,
+    out_dir: str = "out",
+    overlay: bool = False,
+):
     out_dir_p = Path(out_dir)
     out_dir_p.mkdir(parents=True, exist_ok=True)
     pool = mp.Pool(processes=workers)
-    runner = partial(_run_single_trial, scenario_name, agents, steps, target_percent, out_dir=out_dir_p, overlay=overlay)
+    runner = partial(
+        _run_single_trial,
+        scenario_name,
+        agents,
+        steps,
+        target_percent,
+        out_dir=out_dir_p,
+        overlay=overlay,
+    )
 
     try:
         results = pool.map(runner, range(1, trials + 1))
@@ -191,7 +227,9 @@ def run_batch(scenario_name: str, trials: int = 5, workers: int = 2, agents: int
         writer = csv.writer(fh)
         writer.writerow(["trial", "steps", "num_agents", "bottlenecks"])
         for r in results:
-            writer.writerow([r["trial"], r["steps"], r["num_agents"], ";".join(map(str, r["bottlenecks"]))])
+            writer.writerow(
+                [r["trial"], r["steps"], r["num_agents"], ";".join(map(str, r["bottlenecks"]))]
+            )
     print("Batch finished. Summary written to", agg_csv)
 
 
@@ -200,8 +238,23 @@ def run_single_visual(scenario_name: str):
     run_visual_simulation(env)
 
 
-def run_single_nonvisual(scenario_name: str, agents: int = None, steps: int = None, target_percent: float = None, overlay: bool = False, out_dir: str = "out"):
-    res = _run_single_trial(scenario_name, agents, steps, target_percent, trial_index=1, out_dir=Path(out_dir), overlay=overlay)
+def run_single_nonvisual(
+    scenario_name: str,
+    agents: int = None,
+    steps: int = None,
+    target_percent: float = None,
+    overlay: bool = False,
+    out_dir: str = "out",
+):
+    res = _run_single_trial(
+        scenario_name,
+        agents,
+        steps,
+        target_percent,
+        trial_index=1,
+        out_dir=Path(out_dir),
+        overlay=overlay,
+    )
     print("Run complete:", res)
 
 
@@ -242,11 +295,27 @@ def main():
         return
 
     if args.cmd == "run":
-        run_single_nonvisual(args.scenario, agents=args.agents, steps=args.steps, target_percent=args.target_percent, overlay=args.overlay, out_dir=args.out_dir)
+        run_single_nonvisual(
+            args.scenario,
+            agents=args.agents,
+            steps=args.steps,
+            target_percent=args.target_percent,
+            overlay=args.overlay,
+            out_dir=args.out_dir,
+        )
         return
 
     if args.cmd == "batch":
-        run_batch(args.scenario, trials=args.trials, workers=args.workers, agents=args.agents, steps=args.steps, target_percent=args.target_percent, overlay=args.overlay, out_dir=args.out_dir)
+        run_batch(
+            args.scenario,
+            trials=args.trials,
+            workers=args.workers,
+            agents=args.agents,
+            steps=args.steps,
+            target_percent=args.target_percent,
+            overlay=args.overlay,
+            out_dir=args.out_dir,
+        )
         return
 
 

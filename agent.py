@@ -26,15 +26,16 @@ class DecisionState:
     Snapshot of crowd-level information used by the agent to take a decision.
     This is what an external Agent AI / RL policy would see.
     """
+
     time_step: int
     node_occupancy: Dict[Node, int]
-    group_targets: Dict[int, Node]          # group_id -> leader position
-    edge_over_capacity: Dict[EdgeKey, bool] # (u, v) -> True if overcrowded
+    group_targets: Dict[int, Node]  # group_id -> leader position
+    edge_over_capacity: Dict[EdgeKey, bool]  # (u, v) -> True if overcrowded
 
     # richer info for Agent AI integration
-    agent_positions: Dict[int, Node]        # agent_id -> node
-    agent_types: Dict[int, str]             # agent_id -> "leader"/"follower"/...
-    global_density: float                   # avg agents per occupied node
+    agent_positions: Dict[int, Node]  # agent_id -> node
+    agent_types: Dict[int, str]  # agent_id -> "leader"/"follower"/...
+    global_density: float  # avg agents per occupied node
 
 
 class AgentPolicy(Protocol):
@@ -43,8 +44,7 @@ class AgentPolicy(Protocol):
         agent: "Agent",
         state: DecisionState,
         env: EnvironmentGraph,
-    ) -> Node:
-        ...
+    ) -> Node: ...
 
 
 class Agent:
@@ -83,7 +83,7 @@ class Agent:
 
         self.agent_type = agent_type
         self.group_id = group_id
-        self.is_leader = (agent_type == "leader")
+        self.is_leader = agent_type == "leader"
 
         # navigation strategy (AI behaviour)
         self.strategy = navigation_strategy  # "shortest", "congestion", "safe"
@@ -322,9 +322,7 @@ class Agent:
             step_vec = (nx_ - cx, ny_ - cy)
             norm_goal = math.hypot(*goal_dir) or 1.0
             norm_step = math.hypot(*step_vec) or 1.0
-            return (goal_dir[0] * step_vec[0] + goal_dir[1] * step_vec[1]) / (
-                norm_goal * norm_step
-            )
+            return (goal_dir[0] * step_vec[0] + goal_dir[1] * step_vec[1]) / (norm_goal * norm_step)
 
         best_node = self.current_node
         best_score = (candidate_density, 1, 0.0)
@@ -344,7 +342,6 @@ class Agent:
             return self.current_node
 
         return best_node
-
 
     # ---------- movement & position ----------
 

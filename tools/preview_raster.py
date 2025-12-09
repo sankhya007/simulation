@@ -18,9 +18,9 @@ from PIL import Image
 from maps.floorplan_image_loader import load_floorplan_image_to_layout
 
 # Color map for visualization
-COLOR_W = (0, 0, 0)         # walls -> black
-COLOR_E = (0, 255, 0)       # exits -> green
-COLOR_D = (255, 255, 255)   # walkable -> white
+COLOR_W = (0, 0, 0)  # walls -> black
+COLOR_E = (0, 255, 0)  # exits -> green
+COLOR_D = (255, 255, 255)  # walkable -> white
 
 
 def layout_to_image(layout, scale=8):

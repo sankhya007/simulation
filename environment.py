@@ -9,13 +9,14 @@ from config import EDGE_BASE_CAPACITY
 from maps.map_meta import MapMeta
 from typing import Optional
 from typing import Any
-
+import numpy as np
 
 Node = Tuple[int, int]
 LayoutMatrix = Sequence[Sequence[str]]
 
 # Removed stray undefined code: node/world coordinates should be set when nodes are created
 # (see _build_open_grid and _build_from_layout which set node "pos" attributes).
+
 
 class EnvironmentGraph:
     """
@@ -57,32 +58,53 @@ class EnvironmentGraph:
         slowdown = weight / dist
         return max(1.0, slowdown)
 
-
     def __init__(
         self,
         width: int,
         height: int,
         layout_matrix: Optional[LayoutMatrix] = None,
         mapmeta: Optional[MapMeta] = None,
+        *,
+        graph_type: str = "grid",  # "grid" | "centerline" | "hybrid"
+        cell_size: Optional[float] = None,  # world units per cell (smaller => more nodes)
     ):
         """
-        If layout_matrix is None: build a fully open grid of size (width x height).
-        If layout_matrix is provided: infer width/height from it and build from symbols.
-
-        New: optional mapmeta: when provided, node 'pos' attribute will be set from
-        mapmeta.transform(gx, gy) (world coordinates). If not provided, pos defaults
-        to (float(x), float(y)) as before.
+        Build environment. New options:
+          - graph_type: "grid" (default), "centerline", "hybrid"
+          - cell_size: optional world units per grid cell. If provided with mapmeta,
+                       will determine grid resolution. If None, uses mapmeta.grid_shape.
+        Backwards compatible: if layout_matrix provided, old layout-based builder used
+        (but can still pass mapmeta and graph_type to control node positions).
         """
         self.graph = nx.Graph()
-        self._mapmeta = mapmeta  # store for possible later use
+        self._mapmeta = mapmeta  # may be None
+        self.graph_type = graph_type
+        self.cell_size = cell_size
 
-        if layout_matrix is None:
-            self.width = int(width)
-            self.height = int(height)
-            self._build_open_grid(mapmeta=mapmeta)
+        # If layout provided, keep compatibility but allow graph_type handling
+        if layout_matrix is not None:
+            # prefer mapmeta-driven building if mapmeta given and graph_type != "grid"
+            if mapmeta is not None and graph_type in ("centerline", "hybrid"):
+                # build from mapmeta rasterization
+                if graph_type == "centerline":
+                    self._build_centerline_graph(mapmeta)
+                else:
+                    self._build_hybrid_graph(mapmeta, cell_size=cell_size)
+            else:
+                # fallback to legacy layout builder (grid aligned to layout_matrix)
+                self._build_from_layout(layout_matrix, mapmeta=mapmeta)
         else:
-            # If layout provided, infer dimensions (preserve existing behaviour)
-            self._build_from_layout(layout_matrix, mapmeta=mapmeta)
+            # No layout matrix: build an open grid with requested resolution
+            if mapmeta is not None and graph_type in ("centerline", "hybrid"):
+                if graph_type == "centerline":
+                    self._build_centerline_graph(mapmeta)
+                else:
+                    self._build_hybrid_graph(mapmeta, cell_size=cell_size)
+            else:
+                # grid builder uses width/height (legacy behavior)
+                self.width = int(width)
+                self.height = int(height)
+                self._build_open_grid(mapmeta=mapmeta)
 
     # ------------------------------------------------------------------
     # PUBLIC UTILITIES (NODES)
@@ -100,9 +122,7 @@ class EnvironmentGraph:
 
     def get_random_exit_node(self) -> Optional[Node]:
         exits = [
-            n
-            for n, data in self.graph.nodes(data=True)
-            if data.get("accessibility") == "exit"
+            n for n, data in self.graph.nodes(data=True) if data.get("accessibility") == "exit"
         ]
         if not exits:
             return None
@@ -218,9 +238,7 @@ class EnvironmentGraph:
         If no exit exists or no path, returns [start].
         """
         exit_nodes = [
-            n
-            for n, data in self.graph.nodes(data=True)
-            if data.get("accessibility") == "exit"
+            n for n, data in self.graph.nodes(data=True) if data.get("accessibility") == "exit"
         ]
         if not exit_nodes:
             return [start]
@@ -360,8 +378,8 @@ class EnvironmentGraph:
             v,
             distance=distance,
             max_capacity=EDGE_BASE_CAPACITY,
-            weight=distance,           # used by A*
-            dynamic_weight=distance,   # updated when congestion-aware
+            weight=distance,  # used by A*
+            dynamic_weight=distance,  # updated when congestion-aware
         )
 
     def reset_edge_weights_to_distance(self):
@@ -393,6 +411,307 @@ class EnvironmentGraph:
             occ = occupancy_map.get(key1, occupancy_map.get(key2, 0))
             self.set_edge_dynamic_weight(u, v, occ)
 
+    # ============================================================
+    #  NEW GRAPH BUILDERS (CENTERLINE + HYBRID)
+    # ============================================================
+
+    def _build_centerline_graph(self, mapmeta):
+        """
+        Build a centerline / skeleton graph from the raster layout.
+        Requires scikit-image.
+        """
+        try:
+            from skimage.morphology import skeletonize
+            from skimage import img_as_bool
+        except Exception:
+            raise ImportError(
+                "scikit-image is required for graph_type='centerline'. "
+                "Install with: python -m pip install scikit-image scipy"
+            )
+
+        layout = mapmeta.layout
+        H = len(layout)
+        W = len(layout[0])
+
+        import numpy as np
+
+        # Build walkable mask
+        mask = np.zeros((H, W), dtype=bool)
+        for y in range(H):
+            for x in range(W):
+                c = layout[y][x]
+                if c in (".", "0", "E"):  # walkable or exit
+                    mask[y, x] = True
+
+        # Skeleton
+        skel = skeletonize(mask)
+
+        self.width = W
+        self.height = H
+
+        # Add nodes at skeleton pixels
+        for y in range(H):
+            for x in range(W):
+                if not skel[y, x]:
+                    continue
+
+                wx, wy = mapmeta.transform(x, y)
+                self.graph.add_node(
+                    (x, y),
+                    pos=(wx, wy),
+                    accessibility="open",
+                    type="corridor",
+                )
+
+        # 8-connected graph edges
+        dirs = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
+        for x, y in list(self.graph.nodes()):
+            for dx, dy in dirs:
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in self.graph:
+                    self._add_edge_with_defaults((x, y), (nx, ny))
+
+        print(f"[EnvironmentGraph] centerline graph built: {self.graph.number_of_nodes()} nodes")
+
+    def _build_hybrid_graph(self, mapmeta, cell_size=0.5):
+        """
+        Hybrid graph:
+          - Start with centerline skeleton
+          - Add sparse nodes in open areas
+        """
+        # Start by building the centerline
+        try:
+            self._build_centerline_graph(mapmeta)
+        except ImportError:
+            print("[EnvironmentGraph] scikit-image missing: hybrid → fallback to grid.")
+            self._build_from_layout(mapmeta.extras["layout"], mapmeta=mapmeta)
+            return
+
+        layout = mapmeta.layout
+        H = len(layout)
+        W = len(layout[0])
+        import numpy as np
+
+        # How densely to sample extra nodes
+        step = max(1, int(1 / cell_size))
+
+        # Add sampled open-space nodes
+        for y in range(0, H, step):
+            for x in range(0, W, step):
+                c = layout[y][x]
+                if c not in (".", "0", "E"):
+                    continue
+                if (x, y) in self.graph:
+                    continue
+
+                wx, wy = mapmeta.transform(x, y)
+                self.graph.add_node(
+                    (x, y),
+                    pos=(wx, wy),
+                    accessibility="open",
+                    type="corridor",
+                )
+
+        # Connect neighbors
+        for x, y in list(self.graph.nodes()):
+            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in self.graph:
+                    self._add_edge_with_defaults((x, y), (nx, ny))
+
+        print(f"[EnvironmentGraph] hybrid graph built: {self.graph.number_of_nodes()} nodes")
+
+    # ----------------------------
+    # New graph builders (resolution / centerline / hybrid)
+    # ----------------------------
+
+    def _compute_raster_from_layout(self, mapmeta: MapMeta, gw: int, gh: int):
+        """
+        Produce a binary occupancy (walls=1, free=0) image of shape (gh, gw)
+        from the layout (list of rows). This is useful for skeletonization.
+        """
+        # layout aligned grid from mapmeta (we assume mm.grid_shape = (gw, gh))
+        layout = None
+        try:
+            layout = (
+                mapmeta.extras.get("layout")
+                if mapmeta.extras and "layout" in mapmeta.extras
+                else None
+            )
+        except Exception:
+            layout = None
+
+        # fallback to building from env if layout not present in extras
+        if layout is None:
+            # try to create layout from current env graph if available
+            # build a grid occupancy from nodes
+            occupancy = np.ones((gh, gw), dtype=np.uint8)  # 1=wall by default
+            for y in range(gh):
+                for x in range(gw):
+                    node = (x, y)
+                    try:
+                        if self.graph.nodes[node].get("accessibility") in ("open", "exit"):
+                            occupancy[y, x] = 0
+                    except Exception:
+                        # if graph not yet filled, try mapmeta layout
+                        pass
+            return occupancy
+
+        arr = np.zeros((gh, gw), dtype=np.uint8)
+        for y, row in enumerate(layout):
+            for x, ch in enumerate(row):
+                if str(ch) in ("#", "1"):
+                    arr[y, x] = 1
+                else:
+                    arr[y, x] = 0
+        return arr
+
+    def _build_centerline_graph(self, mapmeta: MapMeta):
+        """
+        Build a graph using the medial axis (skeleton) of the free space mask.
+        Requires scikit-image (skimage). If not available, raises ImportError with hint.
+        """
+        try:
+            from skimage.morphology import skeletonize
+            from skimage.filters import threshold_otsu
+            from skimage import img_as_bool
+        except Exception as e:
+            raise ImportError(
+                "Centerline graph requires scikit-image. Install via: pip install scikit-image"
+            ) from e
+
+        # Derive grid shape to rasterize (prefer mapmeta.grid_shape)
+        gw, gh = mapmeta.grid_shape
+        # get occupancy mask 1=wall, 0=free
+        occ = self._compute_raster_from_layout(mapmeta, gw, gh)
+        # skeletonize expects boolean image where True = foreground; we want skeleton of free space
+        free_mask = occ == 0
+        # Convert to boolean
+        free_mask = img_as_bool(free_mask)
+        skeleton = skeletonize(free_mask)
+
+        # Map skeleton pixels to nodes: each True pixel -> node
+        node_idxs = {}
+        for y in range(skeleton.shape[0]):
+            for x in range(skeleton.shape[1]):
+                if skeleton[y, x]:
+                    # world pos from mapmeta.transform
+                    wx, wy = mapmeta.transform(x, y)
+                    node = (int(x), int(y))
+                    self.graph.add_node(
+                        node, pos=(float(wx), float(wy)), accessibility="open", type="corridor"
+                    )
+                    node_idxs[(x, y)] = node
+
+        # Connect adjacent skeleton pixels (8-neighbour)
+        nbrs = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+        for (x, y), _ in node_idxs.items():
+            u = (x, y)
+            for dx, dy in nbrs:
+                v = (x + dx, y + dy)
+                if v in node_idxs:
+                    self._add_edge_with_defaults(u, v)
+
+        # Mark exits if they align with skeleton (optional: detect near exit layers in mapmeta.extras)
+        # leave walls/blocked nodes out — centerline nodes are inherently walkable
+
+        # store metadata
+        self.width = gw
+        self.height = gh
+
+    def _build_hybrid_graph(self, mapmeta: MapMeta, cell_size: Optional[float] = None):
+        """
+        Build a hybrid graph: denser grid in narrow corridors, sparser along centerline in open areas.
+        Simple heuristic:
+          1. Build full grid at resolution gw x gh from mapmeta.grid_shape
+          2. Compute skeleton of free space
+          3. Keep all grid nodes within narrow regions (distance transform threshold)
+          4. In open regions, prune grid nodes and keep only nodes close to skeleton (sparser)
+        """
+        # attempt to import necessary skimage functions; if missing, fallback to grid
+        try:
+            from skimage.morphology import skeletonize
+            from scipy.ndimage import distance_transform_edt
+            from skimage import img_as_bool
+        except Exception:
+            # if libraries missing, fallback to grid graph
+            self._build_from_layout(mapmeta.extras.get("layout", [[]]), mapmeta=mapmeta)
+            return
+
+        gw, gh = mapmeta.grid_shape
+        occ = self._compute_raster_from_layout(mapmeta, gw, gh)
+        free_mask = img_as_bool(occ == 0)
+        skeleton = skeletonize(free_mask)
+        dist = distance_transform_edt(free_mask)  # distance to nearest wall in pixels
+
+        # thresholds (in pixels): narrow corridor threshold => keep full grid
+        narrow_threshold = 3  # pixels (tuneable)
+        for y in range(gh):
+            for x in range(gw):
+                if occ[y, x] == 1:
+                    continue  # wall
+                # keep node if near skeleton or if narrow corridor
+                if dist[y, x] <= narrow_threshold or skeleton[y, x]:
+                    wx, wy = mapmeta.transform(x, y)
+                    node = (x, y)
+                    self.graph.add_node(
+                        node, pos=(float(wx), float(wy)), accessibility="open", type="corridor"
+                    )
+
+        # connect neighbours for nodes that exist
+        for x, y in list(self.graph.nodes()):
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                nbr = (x + dx, y + dy)
+                if nbr in self.graph:
+                    self._add_edge_with_defaults((x, y), nbr)
+
+        self.width = gw
+        self.height = gh
+
+    def _build_grid_graph_from_mapmeta(
+        self, mapmeta: MapMeta, target_cell_size: Optional[float] = None
+    ):
+        """
+        Build a grid graph derived from mapmeta but allowing specifying a desired cell_size
+        in world units. If target_cell_size is None, fall back to mapmeta.grid_shape (existing behaviour).
+        """
+        gw, gh = mapmeta.grid_shape
+        if target_cell_size is None:
+            # legacy mode: use gridshape as-is
+            self._build_from_layout(mapmeta.extras.get("layout", None), mapmeta=mapmeta)
+            return
+
+        # compute desired number of columns/rows to roughly match world bbox and cell size
+        minx, maxx, miny, maxy = mapmeta.bbox
+        world_w = maxx - minx if maxx != minx else 1.0
+        world_h = maxy - miny if maxy != miny else 1.0
+        cols = max(3, int(round(world_w / target_cell_size)))
+        rows = max(3, int(round(world_h / target_cell_size)))
+
+        # create a synthetic layout where each cell is computed from downsampled layout
+        # if mapmeta.extras contains layout, we will sample it; otherwise fallback to open grid
+        layout_src = mapmeta.extras.get("layout") if mapmeta.extras else None
+        new_layout = [["." for _ in range(cols)] for _ in range(rows)]
+        if layout_src:
+            src_h = len(layout_src)
+            src_w = len(layout_src[0]) if src_h else 0
+            for ry in range(rows):
+                for rx in range(cols):
+                    # map back to source cell (nearest neighbor sampling)
+                    sx = int(rx * src_w / cols)
+                    sy = int(ry * src_h / rows)
+                    sx = min(src_w - 1, max(0, sx))
+                    sy = min(src_h - 1, max(0, sy))
+                    new_layout[ry][rx] = layout_src[sy][sx]
+        else:
+            # leave as all open
+            pass
+
+        # finally build from new layout
+        self._build_from_layout(new_layout, mapmeta=None)
+        # set width/height to cols/rows and positions scale to cell centers in world units
+        self.width = cols
+        self.height = rows
 
 
 def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
@@ -439,13 +758,25 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
 
     def _get_grid_coords_from_obj(obj):
         # Try attribute names for grid indices
-        for ax, ay in (("gx", "gy"), ("grid_x", "grid_y"), ("x_idx", "y_idx"), ("i", "j"), ("col", "row")):
+        for ax, ay in (
+            ("gx", "gy"),
+            ("grid_x", "grid_y"),
+            ("x_idx", "y_idx"),
+            ("i", "j"),
+            ("col", "row"),
+        ):
             gx = getattr(obj, ax, None)
             gy = getattr(obj, ay, None)
             if gx is not None and gy is not None:
                 return gx, gy
         # Try dict keys
-        for kx, ky in (("gx", "gy"), ("grid_x", "grid_y"), ("x_idx", "y_idx"), ("i", "j"), ("col", "row")):
+        for kx, ky in (
+            ("gx", "gy"),
+            ("grid_x", "grid_y"),
+            ("x_idx", "y_idx"),
+            ("i", "j"),
+            ("col", "row"),
+        ):
             try:
                 if kx in obj and ky in obj:
                     return obj[kx], obj[ky]
@@ -462,7 +793,12 @@ def attach_mapmeta_to_environment(env: Any, mapmeta: MapMeta) -> None:
                 nodes_iter = graph.nodes(data=True)
                 for nid, data in nodes_iter:
                     # data may contain grid coords
-                    coords = _get_grid_coords_from_obj(data) or _get_grid_coords_from_obj(data.get("attrs", {})) if isinstance(data, dict) else None
+                    coords = (
+                        _get_grid_coords_from_obj(data)
+                        or _get_grid_coords_from_obj(data.get("attrs", {}))
+                        if isinstance(data, dict)
+                        else None
+                    )
                     if coords:
                         gx, gy = coords
                         # set on data dict
