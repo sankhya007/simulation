@@ -309,3 +309,28 @@ RVO_SAMPLES = 16
 #   in the environment (if you add it).
 #
 # Keep this file tidy — it's the easiest place to create reproducible experiments.
+
+# --- per-agent heterogeneity (new) ---
+# Speed distribution (mean, std). sampled via random.gauss(mean, std) and clamped to [0.1, 2.0]
+AGENT_SPEED_MEAN = 0.8
+AGENT_SPEED_STD = 0.15
+
+# Physical size (radius meters / world units) distribution
+AGENT_RADIUS_MEAN = 0.30
+AGENT_RADIUS_STD = 0.08
+
+# Preferred personal space (used for sidesteps / social force)
+AGENT_PERSONAL_SPACE_MEAN = 0.6
+AGENT_PERSONAL_SPACE_STD = 0.15
+
+# Reaction time (in simulation ticks) - how long between perceiving a panic and adopting it
+AGENT_REACTION_TIME_MEAN = 1.0
+AGENT_REACTION_TIME_STD = 0.5
+
+# Visibility radius (how far an agent can "see" other agents / leaders)
+AGENT_VISIBILITY_MEAN = 3.0
+AGENT_VISIBILITY_STD = 1.0
+
+# Panic propagation params
+PANIC_SPREAD_PROB = 0.25  # probability that a nearby panic agent causes panic per perception
+PANIC_SPREAD_RADIUS = 2.0  # in world units (distance)

@@ -1,4 +1,5 @@
 # test_motion_smoke.py
+
 import config
 import random
 from maps.map_loader import load_mapmeta_from_config
@@ -19,12 +20,26 @@ def smoke_test(motion_model="graph", agents=20, steps=10, seed=123):
     for a in sim.agents[:6]:
         print(f"  {a.id}: {a.get_position()}  node={a.current_node}")
 
+    print("\nSample agent attributes (first 6):")
+    for a in sim.agents[:6]:
+        print(f"  id={a.id} type={a.agent_type} speed={a.speed:.2f} radius={getattr(a,'radius',None):.2f} vis={getattr(a,'visibility_radius',getattr(a,'visibility_radius',None))} react={getattr(a,'reaction_time',None):.1f} panic={a.is_panic}")
+
+    # seed panic on agent 0 for smoke check
+    if sim.agents:
+        sim.agents[0].is_panic = True
+        sim.agents[0].agent_type = "panic"
+        print("\nSeeded panic on agent 0")
+
     for t in range(steps):
         sim.step()
 
     print("\nAfter steps:")
     for a in sim.agents[:6]:
-        print(f"  {a.id}: {a.get_position()}  node={a.current_node}  collided={a.collisions}")
+        print(f"  {a.id}: {a.get_position()}  node={a.current_node}  collided={a.collisions} panic={a.is_panic}")
+
+    print("\nPanic states after steps:")
+    panicked = [a.id for a in sim.agents if a.is_panic]
+    print(f"  panicked agents: {panicked}")
 
     print("\nSummary:")
     sim.summary()

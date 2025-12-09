@@ -23,6 +23,8 @@ from config import (
     EXIT_TOGGLE_EVERY_N_STEPS,
     NAV_STRATEGY_MODE,
     NAV_STRATEGY_MIX,
+    PANIC_SPREAD_PROB,
+    PANIC_SPREAD_RADIUS,
 )
 # motion models imported if present
 try:
@@ -295,6 +297,37 @@ class CrowdSimulation:
         max_density = max(node_occupancy.values()) if node_occupancy else 0
         self.max_density_per_step.append(max_density)
 
+        # -------------------------
+        # 1a) Panic propagation (new)
+        # -------------------------
+        try:
+            PANIC_P = getattr(config, "PANIC_SPREAD_PROB", PANIC_SPREAD_PROB)
+            PANIC_R = getattr(config, "PANIC_SPREAD_RADIUS", PANIC_SPREAD_RADIUS)
+        except Exception:
+            PANIC_P, PANIC_R = 0.25, 2.0
+
+        # quick list of panic agent positions
+        panic_positions = [(a.get_position(), a.id) for a in self.agents if getattr(a, "is_panic", False)]
+
+        if panic_positions:
+            for agent in self.agents:
+                if getattr(agent, "is_panic", False):
+                    continue
+                if getattr(agent, "_pending_panic_activation", None) is not None:
+                    continue
+                ax, ay = agent.get_position()
+                for (pxy, pid) in panic_positions:
+                    px, py = pxy
+                    d = math.hypot(ax - px, ay - py)
+                    if d <= PANIC_R and random.random() < PANIC_P:
+                        agent.schedule_panic_activation(self.time_step)
+                        break
+
+        # activate pending panic if activation time reached
+        for agent in self.agents:
+            if hasattr(agent, "_maybe_activate_pending_panic"):
+                agent._maybe_activate_pending_panic(self.time_step)
+
         # 2) apply dynamic environment events
         if ENABLE_DYNAMIC_EVENTS:
             self._apply_dynamic_events(node_occupancy)
@@ -431,6 +464,13 @@ class CrowdSimulation:
             agent_types=agent_types,
             global_density=global_density,
         )
+
+        # store state on agents (convenience for motion models that attempt to query it)
+        for a in self.agents:
+            try:
+                a._last_decision_state = state
+            except Exception:
+                pass
 
         desires: Dict[int, Node] = {}
         for agent in self.agents:

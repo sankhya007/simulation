@@ -1,10 +1,4 @@
 # motion_models.py
-"""
-Motion models for crowd simulation:
- - GraphMotionModel: adapter that converts a discrete next-node into a short velocity (keeps legacy behaviour)
- - SocialForceModel: simplified Helbing social force continuous model
- - RVOMotionModel: sampling-based ORCA-like avoidance heuristic
-"""
 
 from __future__ import annotations
 import math
@@ -127,7 +121,10 @@ class SocialForceModel:
 
         # social repulsive forces from other agents
         px, py = agent.get_position()
-        eff_r = self.agent_radius * 2.0
+        # prefer per-agent personal space / radius if available
+        agent_radius = getattr(agent, "radius", self.agent_radius)
+        personal_space = getattr(agent, "personal_space", agent_radius * 2.0)
+        eff_r = personal_space
         for other_id, (ox, oy) in state.positions.items():
             if other_id == agent.id:
                 continue

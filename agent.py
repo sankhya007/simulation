@@ -13,6 +13,18 @@ from config import (
     DENSITY_THRESHOLD,
     GLOBAL_DENSITY_REPLAN_THRESHOLD,
     EVACUATION_MODE,
+    AGENT_SPEED_MEAN,
+    AGENT_SPEED_STD,
+    AGENT_RADIUS_MEAN,
+    AGENT_RADIUS_STD,
+    AGENT_PERSONAL_SPACE_MEAN,
+    AGENT_PERSONAL_SPACE_STD,
+    AGENT_REACTION_TIME_MEAN,
+    AGENT_REACTION_TIME_STD,
+    AGENT_VISIBILITY_MEAN,
+    AGENT_VISIBILITY_STD,
+    PANIC_SPREAD_PROB,
+    PANIC_SPREAD_RADIUS,
 )
 
 
@@ -144,7 +156,30 @@ class Agent:
             # fallback to grid indices as floats
             self.pos = (float(self.current_node[0]), float(self.current_node[1]))
         self.vel = (0.0, 0.0)
-        self.radius = 0.3
+
+        # ---------- per-agent heterogeneity (sampled) ----------
+        # If speed was not explicitly passed, blend type baseline with sampled value.
+        if speed is None:
+            sampled_speed = max(0.05, random.gauss(AGENT_SPEED_MEAN, AGENT_SPEED_STD))
+            base = AGENT_TYPE_SPEEDS.get(agent_type, AGENT_SPEED_MEAN)
+            self.speed = float(0.6 * base + 0.4 * sampled_speed)
+
+        # radius / physical size
+        self.radius = float(max(0.05, random.gauss(AGENT_RADIUS_MEAN, AGENT_RADIUS_STD)))
+
+        # preferred personal space (used by social force heuristics)
+        self.personal_space = float(max(0.1, random.gauss(AGENT_PERSONAL_SPACE_MEAN, AGENT_PERSONAL_SPACE_STD)))
+
+        # reaction time (in ticks) for panic activation / behavior change
+        self.reaction_time = float(max(0.0, random.gauss(AGENT_REACTION_TIME_MEAN, AGENT_REACTION_TIME_STD)))
+
+        # visibility radius (world units)
+        self.visibility_radius = float(max(0.5, random.gauss(AGENT_VISIBILITY_MEAN, AGENT_VISIBILITY_STD)))
+
+        # panic / contagion state
+        self.is_panic = (agent_type == "panic")
+        # pending panic activation: None or time_step when panic becomes active
+        self._pending_panic_activation: Optional[int] = None
 
         # default motion model adapter (GraphMotionModel) if available
         try:
@@ -157,6 +192,30 @@ class Agent:
     # ---------- policy management ----------
     def set_policy(self, policy: AgentPolicy):
         self.policy = policy
+
+    # ---------- panic helpers ----------
+    def schedule_panic_activation(self, current_time_step: int):
+        """
+        Trigger panic after reaction_time ticks (simple scheduling).
+        """
+        if self.is_panic:
+            return
+        activation = int(current_time_step + max(1, round(self.reaction_time)))
+        # choose earliest activation if already pending
+        if self._pending_panic_activation is None or activation < self._pending_panic_activation:
+            self._pending_panic_activation = activation
+
+    def _maybe_activate_pending_panic(self, current_time_step: int):
+        if self._pending_panic_activation is not None and current_time_step >= self._pending_panic_activation:
+            self.is_panic = True
+            self.agent_type = "panic"
+            self._pending_panic_activation = None
+            # small side-effect: speed may increase under panic (blend in panic baseline if present)
+            try:
+                base = AGENT_TYPE_SPEEDS.get("panic", self.speed)
+                self.speed = max(self.speed, base)
+            except Exception:
+                pass
 
     # ---------- internal helpers ----------
     def _weight_attr_for_routing(self) -> str:
