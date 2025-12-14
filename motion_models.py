@@ -3,6 +3,7 @@
 from __future__ import annotations
 import math
 import random
+import config
 from typing import Protocol, Tuple, Dict, Any, List
 
 Node = Tuple[int, int]
@@ -182,6 +183,22 @@ class RVOMotionModel:
         return (dx / d * sp, dy / d * sp)
 
     def compute_velocity(self, agent, state: MotionState, env):
+        if config.EVACUATION_MODE:
+            exit_node = env.nearest_exit(agent.current_node)
+        ex, ey = env.get_pos(exit_node)
+        ax, ay = agent.get_position()
+
+        goal_dx = ex - ax
+        goal_dy = ey - ay
+        norm = math.hypot(goal_dx, goal_dy) or 1.0
+
+        goal_force_x = goal_dx / norm
+        goal_force_y = goal_dy / norm
+
+        vx += goal_force_x * agent.speed
+        vy += goal_force_y * agent.speed
+
+        
         px, py = agent.get_position()
         neighbors = []
         for other_id, (ox, oy) in state.positions.items():

@@ -46,8 +46,10 @@ AGENT_REPLAN_PROB = 0.01
 
 COLLISION_DISTANCE = 0.25
 # - COLLISION_DISTANCE:
-#   Threshold used for counting collisions (pairwise distance).
-#   Smaller values mean "closer" collisions; used only for metrics (not physics).
+#   Threshold used ONLY for legacy distance-based collision metrics.
+#   Physical collision resolution is handled by the PhysicsEngine (Step 10)
+#   and does NOT use this value.
+
 
 PERCEPTION_RADIUS = 3.0
 # - PERCEPTION_RADIUS:
@@ -289,8 +291,59 @@ RVO_SAMPLES = 16
 # - Number of candidate velocities sampled per agent per step. More samples -> better avoidance but slower.
 
 # -------------------------
+# PHYSICS & COLLISION HANDLING (Step 10)
+# -------------------------
+# These parameters control physical collision response between agents.
+# They are orthogonal to MOTION_MODEL:
+#   - MOTION_MODEL controls how agents *choose* velocities
+#   - PHYSICS_MODEL controls how overlaps & collisions are *resolved*
+
+ENABLE_PHYSICS = True
+# - ENABLE_PHYSICS:
+#   Master switch for Step-10 physics.
+#   If False, collision handling falls back to legacy (no physical resolution).
+
+PHYSICS_MODEL = "elastic"
+# - PHYSICS_MODEL: "elastic" | "hard"
+#   "elastic" -> agents repel and slow down (natural jams, realistic crowding)
+#   "hard"    -> agents block each other completely (strong bottlenecks)
+
+# Collision damping factor (elastic model)
+PHYSICS_DAMPING = 0.5
+# - PHYSICS_DAMPING:
+#   Multiplier applied to agent velocity after collision.
+#   Lower values -> stronger slowdown & denser jams.
+
+# Maximum force applied during pushing / collision resolution
+PHYSICS_MAX_FORCE = 5.0
+# - PHYSICS_MAX_FORCE:
+#   Upper bound on collision / pushing force magnitude.
+#   Prevents numerical explosions in dense crowds.
+
+# Enable agent pushing behavior (future extension hook)
+ENABLE_PUSHING = False
+# - ENABLE_PUSHING:
+#   If True, agents may apply forces to push through dense crowds.
+#   Recommended only for panic or emergency scenarios.
+
+
+# -------------------------
 # VISUALIZATION / OUTPUT
 # -------------------------
+
+# Step 10: collision visualization
+SHOW_COLLISIONS = True
+# - SHOW_COLLISIONS:
+#   If True, agents involved in collisions are highlighted in visualization.
+
+COLLISION_COLOR = "yellow"
+# - COLLISION_COLOR:
+#   Matplotlib color used to highlight colliding agents.
+
+COLLISION_SIZE_BOOST = 1.6
+# - COLLISION_SIZE_BOOST:
+#   Size multiplier applied to agents involved in collisions.
+
 # Non-critical knobs for saving, debug traces and visuals.
 
 # SHOW_TRAILS = False
@@ -334,3 +387,8 @@ AGENT_VISIBILITY_STD = 1.0
 # Panic propagation params
 PANIC_SPREAD_PROB = 0.25  # probability that a nearby panic agent causes panic per perception
 PANIC_SPREAD_RADIUS = 2.0  # in world units (distance)
+
+# Panic & physics coupling
+PANIC_ENABLE_PUSHING = False
+# - PANIC_ENABLE_PUSHING:
+#   If True, panic agents may exert pushing forces when ENABLE_PUSHING is enabled.

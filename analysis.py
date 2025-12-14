@@ -56,6 +56,34 @@ def plot_max_density_over_time(sim: CrowdSimulation):
     # plt.savefig("metrics_max_density_over_time.png", dpi=200)
 
     plt.show()
+    
+def plot_collisions_over_time(sim: CrowdSimulation):
+    """
+    Plot number of collisions per simulation step.
+    Requires Step-10 PhysicsEngine integration.
+    """
+    # physics engine may not exist in older runs
+    physics = getattr(sim, "physics", None)
+    if physics is None:
+        print("[plot_collisions_over_time] No physics engine attached to simulation.")
+        return
+
+    collisions = getattr(physics, "collisions_per_step", None)
+    if not collisions:
+        print("[plot_collisions_over_time] No collision data recorded.")
+        return
+
+    steps = np.arange(1, len(collisions) + 1)
+
+    plt.figure(figsize=(6, 4))
+    plt.plot(steps, collisions, marker="o", linewidth=1)
+    plt.xlabel("Simulation step")
+    plt.ylabel("Number of collisions")
+    plt.title("Collisions Over Time")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
 
 
 def plot_metrics_by_agent_type(sim: CrowdSimulation):
@@ -94,6 +122,23 @@ def plot_metrics_by_agent_type(sim: CrowdSimulation):
     # plt.savefig("metrics_by_agent_type.png", dpi=200)
 
     plt.show()
+
+def compute_collision_kpis(sim: CrowdSimulation) -> Dict[str, float]:
+    """
+    Compute collision-related KPIs.
+    """
+    agents = sim.agents
+    if not agents:
+        return {}
+
+    collisions = np.array([a.collisions for a in agents])
+
+    return {
+        "total_collisions": int(np.sum(collisions)),
+        "avg_collisions_per_agent": float(np.mean(collisions)),
+        "max_collisions_single_agent": int(np.max(collisions)),
+        "fraction_agents_with_collision": float(np.mean(collisions > 0)),
+    }
 
 
 def compute_evacuation_kpis(sim: CrowdSimulation):
@@ -144,6 +189,26 @@ def print_evacuation_report(sim: CrowdSimulation):
     print(f"Time to evacuate 80% of agents: {fmt(kpis['t_80'])}")
     print(f"Time to evacuate 90% of agents: {fmt(kpis['t_90'])}")
 
+def print_collision_report(sim: CrowdSimulation):
+    """
+    Print a text report summarizing collision behaviour.
+    """
+    kpis = compute_collision_kpis(sim)
+
+    if not kpis:
+        print("\n=== Collision KPIs ===")
+        print("No collision data available.")
+        return
+
+    print("\n=== Collision KPIs ===")
+    print(f"Total collisions: {kpis['total_collisions']}")
+    print(f"Average collisions per agent: {kpis['avg_collisions_per_agent']:.2f}")
+    print(f"Max collisions (single agent): {kpis['max_collisions_single_agent']}")
+    print(
+        f"Fraction of agents involved in ≥1 collision: "
+        f"{kpis['fraction_agents_with_collision']:.2%}"
+    )
+
 
 def find_bottleneck_cells(sim, top_k: int = 5, min_visits: int = 1):
     """
@@ -172,6 +237,24 @@ def find_bottleneck_cells(sim, top_k: int = 5, min_visits: int = 1):
         y, x = divmod(idx, w)
         bottlenecks.append((x, y, int(visits)))
     return bottlenecks
+
+def find_collision_hotspots(sim: CrowdSimulation, top_k: int = 5):
+    """
+    Identify grid cells where collisions frequently occurred.
+    Uses agent positions at collision time (approximation).
+    """
+    hotspot_counts = {}
+
+    for agent in sim.agents:
+        if agent.collisions > 0:
+            node = agent.current_node
+            hotspot_counts[node] = hotspot_counts.get(node, 0) + agent.collisions
+
+    if not hotspot_counts:
+        return []
+
+    items = sorted(hotspot_counts.items(), key=lambda kv: kv[1], reverse=True)
+    return items[:top_k]  # [((x,y), collision_count)]
 
 
 def overlay_results_on_floorplan(sim, env, top_k: int = 5):

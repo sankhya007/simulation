@@ -8,6 +8,9 @@ from typing import List, Tuple, Dict
 import numpy as np
 import config
 
+from physics.physics_engine import PhysicsEngine
+from physics.collision_models import ElasticCollisionModel, HardBlockingCollisionModel
+
 from environment import EnvironmentGraph
 from agent import Agent, DecisionState
 from config import (
@@ -40,6 +43,7 @@ Node = Tuple[int, int]
 EdgeKey = Tuple[Node, Node]
 
 
+
 class CrowdSimulation:
     """Manages the whole crowd, interactions, and metrics."""
 
@@ -61,6 +65,14 @@ class CrowdSimulation:
                 ratios.append(a.steps_taken / a.initial_shortest_path_len)
         ratios = np.array(ratios) if ratios else np.array([])
 
+
+        # ensure physics fields exist (non-breaking)
+        for a in self.agents:
+            if not hasattr(a, "collisions"):
+                a.collisions = 0
+            if not hasattr(a, "vel"):
+                a.vel = (0.0, 0.0)
+                
         global_metrics = {
             "num_agents": num_agents,
             "time_steps": self.time_step,
@@ -155,6 +167,12 @@ class CrowdSimulation:
         self.total_collisions = 0
         self.last_node_occupancy: Dict[Node, int] = defaultdict(int)
         self.max_density_per_step: List[int] = []
+        
+        physics_mode = getattr(config, "PHYSICS_MODEL", "elastic")
+        if physics_mode == "hard":
+            self.physics = PhysicsEngine(HardBlockingCollisionModel())
+        else:
+            self.physics = PhysicsEngine(ElasticCollisionModel())
 
         for agent in self.agents:
             self.node_visit_counts[agent.current_node] += 1
@@ -185,6 +203,13 @@ class CrowdSimulation:
         for a in self.agents:
             if self.global_motion_model is not None:
                 a.motion_model = self.global_motion_model
+
+        # ensure physics fields exist (safe, non-breaking)
+        for a in self.agents:
+            if not hasattr(a, "collisions"):
+                a.collisions = 0
+            if not hasattr(a, "vel"):
+                a.vel = (0.0, 0.0)
 
     # ---------- initialization helpers ----------
     def _init_agents_with_groups(self, num_agents: int):
@@ -420,7 +445,7 @@ class CrowdSimulation:
                     # fallback: find nearest existing node in graph by Euclidean distance
                     try:
                         best = min(
-                            self.env.graph.nodes(),
+                            (n for n in self.env.graph.nodes() if self.env.is_accessible(n)),
                             key=lambda n: math.hypot(agent.pos[0] - self.env.get_pos(n)[0], agent.pos[1] - self.env.get_pos(n)[1]),
                         )
                         mapped_node = best
@@ -428,9 +453,13 @@ class CrowdSimulation:
                         # last resort: keep the previous node to avoid creating invalid key
                         mapped_node = getattr(agent, "current_node", None)
 
-                # assign mapped node if valid
-                if mapped_node is not None:
+                # assign mapped node only if accessible
+                if mapped_node is not None and self.env.is_accessible(mapped_node):
                     agent.current_node = mapped_node
+                else:
+                    # fallback: keep agent on previous valid node
+                    agent.current_node = agent.current_node
+
 
                 # update node visit (guard against None)
                 if agent.current_node is not None:
@@ -438,7 +467,11 @@ class CrowdSimulation:
 
 
             # collisions & exits
-            self._update_collisions()
+            # Apply physics only if using continuous motion
+            if getattr(config, "MOTION_MODEL", "graph") != "graph":
+                step_collisions = self.physics.step(self.agents, dt=1.0)
+                self.total_collisions += step_collisions
+
 
             for agent in self.agents:
                 if agent.exit_time_step is None and self.env.is_exit(agent.current_node):
@@ -504,23 +537,18 @@ class CrowdSimulation:
                 agent.exit_reached = True
                 agent.exit_time_step = self.time_step
 
-        self._update_collisions()
-
+        step_collisions = self.physics.step(self.agents, dt=1.0)
+        self.total_collisions += step_collisions
+        
     # ---------- metrics & helpers ----------
     def _update_collisions(self):
-        positions = [agent.get_position() for agent in self.agents]
-        n = len(positions)
-        step_collisions = 0
-        for i in range(n):
-            x1, y1 = positions[i]
-            for j in range(i + 1, n):
-                x2, y2 = positions[j]
-                dist = math.dist((x1, y1), (x2, y2))
-                if dist < COLLISION_DISTANCE:
-                    step_collisions += 1
-                    self.agents[i].collisions += 1
-                    self.agents[j].collisions += 1
-        self.total_collisions += step_collisions
+        """
+        Deprecated.
+        Collision handling is now performed by PhysicsEngine (Step 10).
+        This function is kept only for backward compatibility.
+        """
+        return
+
 
     def get_agent_positions(self):
         xs, ys = [], []

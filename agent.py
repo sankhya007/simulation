@@ -147,6 +147,17 @@ class Agent:
 
         self.finished = False
         self.collisions = 0
+        
+        # ---------- physics-related attributes (Step 10) ----------
+        # physical mass (used by collision / pushing models)
+        self.mass: float = 1.0
+
+        # accumulated force (used by physics engine if needed)
+        self.force: Tuple[float, float] = (0.0, 0.0)
+
+        # maximum force agent can exert (for pushing models)
+        self.max_force: float = 5.0
+
 
         # ---------- continuous-motion fields (usable by SF / RVO) ----------
         try:
@@ -269,12 +280,17 @@ class Agent:
         self._ensure_path_valid()
 
         if self.path_index >= len(self.path) - 1:
+            # Mark finished only temporarily; recovery handled below
             self.finished = True
+
 
         if (not EVACUATION_MODE) and self.finished and random.random() < AGENT_REPLAN_PROB:
             self.choose_new_goal()
 
         if self.finished:
+            # Do not permanently freeze agents in non-evacuation mode
+            if not EVACUATION_MODE:
+                self.choose_new_goal()
             return self.current_node
 
         target_node = self.goal_node
@@ -409,9 +425,31 @@ class Agent:
             pass
         return self.env.get_pos(self.current_node)
 
+    # ---------- physics helpers ----------
+    def apply_force(self, fx: float, fy: float):
+        """
+        Apply a physical force to the agent.
+        Used by collision / pushing models.
+        """
+        fx = max(-self.max_force, min(self.max_force, fx))
+        fy = max(-self.max_force, min(self.max_force, fy))
+
+        self.force = (self.force[0] + fx, self.force[1] + fy)
+
+
+
     def integrate_continuous(self, vx: float, vy: float, dt: float = 1.0):
         px, py = self.get_position()
+
+        # Clamp velocity to avoid runaway integration
+        max_step = max(0.1, self.speed)
+        vx = max(-max_step, min(max_step, vx))
+        vy = max(-max_step, min(max_step, vy))
+
         nx, ny = px + vx * dt, py + vy * dt
+
         self.pos = (nx, ny)
         self.vel = (vx, vy)
-        # mapping to node handled by simulation
+
+        # reset force accumulator each step (physics-safe)
+        self.force = (0.0, 0.0)

@@ -205,18 +205,30 @@ class EnvironmentGraph:
         return self.graph.nodes[node]["pos"]
 
     def is_accessible(self, node: Node) -> bool:
+        if node not in self.graph:
+            return False
         data = self.graph.nodes[node]
-        return data.get("accessibility") in ("open", "exit")
+        if data.get("accessibility") not in ("open", "exit"):
+            return False
+        # hard guard: walls are never accessible
+        if data.get("type") == "wall":
+            return False
+        return True
+
 
     def is_exit(self, node: Node) -> bool:
         data = self.graph.nodes[node]
         return data.get("accessibility") == "exit"
 
     def get_neighbors(self, node: Node, accessible_only: bool = True) -> List[Node]:
+        if node not in self.graph:
+            return []
         neighbors = list(self.graph.neighbors(node))
         if not accessible_only:
             return neighbors
-        return [n for n in neighbors if self.is_accessible(n)]
+        # defensive filtering
+        return [n for n in neighbors if n in self.graph and self.is_accessible(n)]
+
 
     def block_node(self, node: Node):
         """
@@ -231,6 +243,12 @@ class EnvironmentGraph:
 
         for nbr in list(self.graph.neighbors(node)):
             self.graph.remove_edge(node, nbr)
+            
+        # Safety: ensure no edges remain pointing to this node
+        for u, v in list(self.graph.edges()):
+            if u == node or v == node:
+                self.graph.remove_edge(u, v)
+
 
     def unblock_node(self, node: Node, node_type: str = "corridor"):
         """
@@ -398,8 +416,14 @@ class EnvironmentGraph:
             # any unexpected failure -> fallback
             pass
 
-        # final fallback: grid index as float coords
+        # final fallback: grid index as float coords (only if node exists)
+        node = (int(gx), int(gy))
+        if node in self.graph and self.is_accessible(node):
+            return float(gx), float(gy)
+
+        # absolute fallback: origin-safe value (will be clamped by simulation)
         return float(gx), float(gy)
+
 
 
     def _build_open_grid(self, mapmeta: Optional[MapMeta] = None):
@@ -488,6 +512,11 @@ class EnvironmentGraph:
     # ------------------------------------------------------------------
 
     def _add_edge_with_defaults(self, u: Node, v: Node):
+        
+        # Never connect to blocked nodes
+        if not self.is_accessible(u) or not self.is_accessible(v):
+            return
+        
         x1, y1 = self.graph.nodes[u]["pos"]
         x2, y2 = self.graph.nodes[v]["pos"]
 

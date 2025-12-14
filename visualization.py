@@ -11,6 +11,7 @@ import matplotlib.animation as animation
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
+import agent
 from config import RASTER_DOWNSCALE_FACTOR
 from typing import Any, Tuple, Optional
 
@@ -31,6 +32,11 @@ from scenarios import configure_environment_for_active_scenario
 SHOW_DENSITY_HEATMAP = True
 EDGE_ALPHA = 0.25
 AGENT_SIZE = 30
+
+# Step 10: collision visualization
+SHOW_COLLISIONS = True          # highlight agents involved in collisions
+COLLISION_COLOR = "yellow"      # color used to mark colliding agents
+COLLISION_SIZE_BOOST = 1.6      # size multiplier for colliding agents
 
 
 def _get_node_world_pos(env: EnvironmentGraph, node: Tuple[int, int]) -> Tuple[float, float]:
@@ -128,13 +134,7 @@ def _get_agent_world_pos(agent: Any, env: EnvironmentGraph) -> Tuple[float, floa
     return 0.0, 0.0
 
 
-def run_visual_simulation(
-    env_or_tuple: Any,
-    agents: Optional[int] = None,
-    steps: Optional[int] = None,
-    interval_ms: int = 200,
-    show_trails: bool = False,
-):
+def run_visual_simulation(env):
     """
     Visual simulation runner (matplotlib animation).
 
@@ -143,21 +143,16 @@ def run_visual_simulation(
     :param steps: maximum simulation steps (overrides config.MAX_STEPS if provided)
     :param interval_ms: frame interval in milliseconds
     :param show_trails: if True, show short trails for agents
-    """
-    # Accept either env or (env, meta)
-    if isinstance(env_or_tuple, tuple) or isinstance(env_or_tuple, list):
-        env = env_or_tuple[0]
-    else:
-        env = env_or_tuple
+    """    
+    max_steps = config.MAX_STEPS
+    interval_ms = 60
+    show_trails = False
 
     if not isinstance(env, EnvironmentGraph):
         raise ValueError("run_visual_simulation expects an EnvironmentGraph or (env, meta) tuple.")
 
-    num_agents = agents if agents is not None else getattr(config, "NUM_AGENTS", 60)
-    max_steps = steps if steps is not None else getattr(config, "MAX_STEPS", 400)
-
     # Create simulation
-    sim = CrowdSimulation(env, num_agents)
+    sim = CrowdSimulation(env, config.NUM_AGENTS)
 
     # Prepare figure and axes
     fig, ax = plt.subplots(figsize=(10, 7))
@@ -210,8 +205,8 @@ def run_visual_simulation(
     # Trails (if enabled)
     if show_trails:
         trails_len = 8
-        trails = [ax.plot([], [], lw=1, alpha=0.8, zorder=2)[0] for _ in range(num_agents)]
-        trails_data = [[] for _ in range(num_agents)]
+        trails = [ax.plot([], [], lw=1, alpha=0.8, zorder=2)[0] for _ in sim.agents]
+        trails_data = [[] for _ in sim.agents]
     else:
         trails = []
         trails_data = []
@@ -464,16 +459,31 @@ def run_visual_simulation(env):
 
             xs.append(x)
             ys.append(y)
-            cs.append(type_to_color.get(getattr(agent, "agent_type", None), "white"))
+            # base color by agent type
+            base_color = type_to_color.get(getattr(agent, "agent_type", None), "white")
+
+            # Step 10: collision highlighting
+            if SHOW_COLLISIONS and getattr(agent, "_collided_this_step", False):
+                cs.append(COLLISION_COLOR)
+            else:
+                cs.append(base_color)
         if not xs:
             return np.empty((0,)), np.empty((0,)), []
         return np.array(xs), np.array(ys), cs
 
     xs, ys, cs = get_agent_xy_and_colors()
+    
+    sizes = []
+    for agent in sim.agents:
+        if SHOW_COLLISIONS and getattr(agent, "collisions", 0) > 0:
+            sizes.append(AGENT_SIZE * COLLISION_SIZE_BOOST)
+        else:
+            sizes.append(AGENT_SIZE)
+    
     agent_scat = ax.scatter(
         xs,
         ys,
-        s=AGENT_SIZE,
+        s=sizes,
         c=cs,
         edgecolors="black",
         linewidths=0.4,
@@ -550,6 +560,17 @@ def run_visual_simulation(env):
         else:
             agent_scat.set_offsets(np.empty((0, 2)))
         agent_scat.set_facecolors(cs)
+        
+        # Step 10: update sizes for collision visualization
+        if SHOW_COLLISIONS:
+            sizes = []
+            for agent in sim.agents:
+                if getattr(agent, "collisions", 0) > 0:
+                    sizes.append(AGENT_SIZE * COLLISION_SIZE_BOOST)
+                else:
+                    sizes.append(AGENT_SIZE)
+            agent_scat.set_sizes(sizes)
+
 
         if SHOW_DENSITY_HEATMAP and density_img is not None:
             density_mat = sim.get_density_matrix()
@@ -570,7 +591,9 @@ def run_visual_simulation(env):
         info_text.set_text(
             f"Step: {getattr(sim, 'time_step', None)}\n"
             f"Agents: {len(sim.agents)}\n"
-            f"Total collisions: {getattr(sim, 'total_collisions', None)}\n"
+            f"Total collisions: {getattr(sim, 'total_collisions', 0)}\n"
+            f"Agents w/ collisions: "
+            f"{sum(1 for a in sim.agents if getattr(a, 'collisions', 0) > 0)}\n"
             f"Occupied nodes: {len(getattr(sim, 'last_node_occupancy', []))}"
         )
 
